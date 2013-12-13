@@ -7,7 +7,7 @@ typealias PaError Cint
 typealias PaSampleFormat Culong
 typealias PaStream Void
 
-const PA_NO_ERROR::PaError = 0
+const PA_NO_ERROR = 0
 
 function handle_status(err::PaError)
     if err != PA_NO_ERROR
