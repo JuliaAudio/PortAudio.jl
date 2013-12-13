@@ -2,6 +2,8 @@
 
 module PortAudio
 
+export init, deinit, play_sin, stop_sin
+
 typealias PaTime Cdouble
 typealias PaError Cint
 typealias PaSampleFormat Culong
