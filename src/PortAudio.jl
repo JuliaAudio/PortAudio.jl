@@ -4,6 +4,14 @@ module PortAudio
 
 export init, deinit, play_sin, stop_sin
 
+# Load in the custom C shim
+const libportaudio_shim = find_library(["libportaudio_shim",],
+        [Pkg.dir("PortAudio", "deps", "usr", "lib"),])
+
+@assert(libportaudio_shim != "", "Failed to find required library " +
+        "libportaudio_shim. Try re-running the package script using " +
+        "Pkg.build(\"PortAudio\")")
+
 typealias PaTime Cdouble
 typealias PaError Cint
 typealias PaSampleFormat Culong
@@ -15,7 +23,7 @@ function handle_status(err::PaError)
     if err != PA_NO_ERROR
         msg = ccall((:Pa_GetErrorText, "libportaudio"),
                     Ptr{Cchar}, (PaError,), err)
-        error(bytestring(msg))
+        error("libportaudio: " + bytestring(msg))
     end
 end
 
@@ -30,12 +38,12 @@ function deinit()
 end
 
 function play_sin()
-    err = ccall((:play_sin, "libportaudio_shim"), PaError, ())
+    err = ccall((:play_sin, libportaudio_shim), PaError, ())
     handle_status(err)
 end
 
 function stop_sin()
-    err = ccall((:stop_sin, "libportaudio_shim"), PaError, ())
+    err = ccall((:stop_sin, libportaudio_shim), PaError, ())
     handle_status(err)
 end
 
