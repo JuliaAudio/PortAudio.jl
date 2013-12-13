@@ -2,15 +2,7 @@
 
 module PortAudio
 
-export init, deinit, play_sin, stop_sin
-
-# Load in the custom C shim
-const libportaudio_shim = find_library(["libportaudio_shim",],
-        [Pkg.dir("PortAudio", "deps", "usr", "lib"),])
-
-@assert(libportaudio_shim != "", "Failed to find required library " *
-        "libportaudio_shim. Try re-running the package script using " *
-        "Pkg.build(\"PortAudio\")")
+export play_sin, stop_sin
 
 typealias PaTime Cdouble
 typealias PaError Cint
@@ -19,23 +11,7 @@ typealias PaStream Void
 
 const PA_NO_ERROR = 0
 
-function handle_status(err::PaError)
-    if err != PA_NO_ERROR
-        msg = ccall((:Pa_GetErrorText, "libportaudio"),
-                    Ptr{Cchar}, (PaError,), err)
-        error("libportaudio: " * bytestring(msg))
-    end
-end
-
-function init()
-    err = ccall((:Pa_Initialize, "libportaudio"), PaError, ())
-    handle_status(err)
-end
-
-function deinit()
-    err = ccall((:Pa_Terminate, "libportaudio"), PaError, ())
-    handle_status(err)
-end
+############ Exported Functions #############
 
 function play_sin()
     err = ccall((:play_sin, libportaudio_shim), PaError, ())
@@ -46,6 +22,33 @@ function stop_sin()
     err = ccall((:stop_sin, libportaudio_shim), PaError, ())
     handle_status(err)
 end
+
+############ Internal Functions ############
+
+function handle_status(err::PaError)
+    if err != PA_NO_ERROR
+        msg = ccall((:Pa_GetErrorText, "libportaudio"),
+                    Ptr{Cchar}, (PaError,), err)
+        error("libportaudio: " * bytestring(msg))
+    end
+end
+
+function init_pulseaudio()
+    err = ccall((:Pa_Initialize, "libportaudio"), PaError, ())
+    handle_status(err)
+end
+
+
+########### Module Initialization ##############
+
+const libportaudio_shim = find_library(["libportaudio_shim",],
+        [Pkg.dir("PortAudio", "deps", "usr", "lib"),])
+
+@assert(libportaudio_shim != "", "Failed to find required library " *
+        "libportaudio_shim. Try re-running the package script using " *
+        "Pkg.build(\"PortAudio\")")
+
+init_pulseaudio()
 
 end # module PortAudio
 
