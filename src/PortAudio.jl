@@ -33,7 +33,8 @@ function handle_status(err::PaError)
     end
 end
 
-function init_pulseaudio()
+function init_portaudio()
+    info("Initializing PortAudio. Expect errors as we scan devices")
     err = ccall((:Pa_Initialize, "libportaudio"), PaError, ())
     handle_status(err)
 end
@@ -48,7 +49,7 @@ const libportaudio_shim = find_library(["libportaudio_shim",],
         "libportaudio_shim. Try re-running the package script using " *
         "Pkg.build(\"PortAudio\")")
 
-init_pulseaudio()
+init_portaudio()
 
 end # module PortAudio
 
