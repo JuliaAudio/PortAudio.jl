@@ -37,12 +37,12 @@ else
   SHLIB_EXT = so
 endif
 
-default: portaudio_shim.$(SHLIB_EXT)
+default: libportaudio_shim.$(SHLIB_EXT)
 
 %.o: %.c
 	$(CC) $< -fPIC -c -o $@ $(INC) $(CFLAGS) $(FLAGS)
 
-portaudio_shim.$(SHLIB_EXT): $(OBJS)
+libportaudio_shim.$(SHLIB_EXT): $(OBJS)
 	$(CC) $(OBJS) -rdynamic -shared -o $@ $(LDFLAGS) $(LIBS)
 
 clean:

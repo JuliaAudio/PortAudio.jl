@@ -28,9 +28,13 @@ function deinit()
 end
 
 function play_sin()
+    err = ccall((:play_sin, "libportaudio_shim"), PaError, ())
+    handle_status(err)
 end
 
 function stop_sin()
+    err = ccall((:stop_sin, "libportaudio_shim"), PaError, ())
+    handle_status(err)
 end
 
 end # module PortAudio
