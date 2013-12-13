@@ -47,7 +47,7 @@ const libportaudio_shim = find_library(["libportaudio_shim",],
 
 @assert(libportaudio_shim != "", "Failed to find required library " *
         "libportaudio_shim. Try re-running the package script using " *
-        "Pkg.build(\"PortAudio\")")
+        "Pkg.build(\"PortAudio\"), then reloading with reload(\"PortAudio\")")
 
 init_portaudio()
 
