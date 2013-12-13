@@ -8,8 +8,8 @@ export init, deinit, play_sin, stop_sin
 const libportaudio_shim = find_library(["libportaudio_shim",],
         [Pkg.dir("PortAudio", "deps", "usr", "lib"),])
 
-@assert(libportaudio_shim != "", "Failed to find required library " +
-        "libportaudio_shim. Try re-running the package script using " +
+@assert(libportaudio_shim != "", "Failed to find required library " *
+        "libportaudio_shim. Try re-running the package script using " *
         "Pkg.build(\"PortAudio\")")
 
 typealias PaTime Cdouble
@@ -23,7 +23,7 @@ function handle_status(err::PaError)
     if err != PA_NO_ERROR
         msg = ccall((:Pa_GetErrorText, "libportaudio"),
                     Ptr{Cchar}, (PaError,), err)
-        error("libportaudio: " + bytestring(msg))
+        error("libportaudio: " * bytestring(msg))
     end
 end
 
