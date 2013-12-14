@@ -1,6 +1,17 @@
 using BinDeps
 
+@BinDeps.setup
+
 ENV["JULIA_ROOT"] = abspath(JULIA_HOME, "../../")
+
+libportaudio = library_dependency("libportaudio")
+
+# TODO: add other providers with correct names
+provides(AptGet,
+    {"portaudio19-dev" => libportaudio}
+)
+
+@BinDeps.install [:libportaudio => :libportaudio]
 
 cd(joinpath(Pkg.dir(), "PortAudio", "deps", "src") )
 run(`make`)
