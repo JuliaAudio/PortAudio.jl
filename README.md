@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/ssfrr/PortAudio.jl.png)](https://travis-ci.org/ssfrr/PortAudio.jl)
+
 PortAudio.jl
 ============
 
