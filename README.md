@@ -1,7 +1,7 @@
-[![Build Status](https://travis-ci.org/ssfrr/PortAudio.jl.png)](https://travis-ci.org/ssfrr/PortAudio.jl)
-
 PortAudio.jl
 ============
+
+[![Build Status](https://travis-ci.org/ssfrr/PortAudio.jl.png)](https://travis-ci.org/ssfrr/PortAudio.jl)
 
 This is a Julia interface to PortAudio. It is currently under heavy development
 and certainly not even close to being useful.
