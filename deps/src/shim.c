@@ -1,29 +1,7 @@
 #include <portaudio.h>
 #include <semaphore.h>
-#include <julia/julia.h>
-#include <math.h>
 #include <stdio.h>
-
-// some defines we need to include until PR 4997 is merged
-STATIC_INLINE jl_function_t *jl_get_function(jl_module_t *m, const char *name)
-{
-    return  (jl_function_t*) jl_get_global(m, jl_symbol(name));
-}
-
-DLLEXPORT jl_value_t *jl_call2(jl_function_t *f, jl_value_t *a, jl_value_t *b)
-{
-    jl_value_t *v;
-    JL_TRY {
-        JL_GC_PUSH3(&f,&a,&b);
-        jl_value_t *args[2] = {a,b};
-        v = jl_apply(f, args, 2);
-        JL_GC_POP();
-    }
-    JL_CATCH {
-        v = NULL;
-    }
-    return v;
-}
+#include <unistd.h>
 
 static int paCallback(const void *inputBuffer, void *outputBuffer,
                           unsigned long framesPerBuffer,
@@ -32,12 +10,22 @@ static int paCallback(const void *inputBuffer, void *outputBuffer,
                           void *userData);
 
 static PaStream *AudioStream;
-static jl_value_t *JuliaRemote;
+static int JuliaPipeReadFD = 0;
+static int JuliaPipeWriteFD = 0;
 static sem_t CSemaphore;
 static void *OutData = NULL;
 static unsigned long OutFrames = 0;
-static jl_function_t *RemotePutFunc = NULL;
-static jl_value_t *RemotePutArg = NULL;
+
+
+int make_pipe(void)
+{
+    int pipefd[2];
+    pipe(pipefd);
+    JuliaPipeReadFD = pipefd[0];
+    JuliaPipeWriteFD = pipefd[1];
+    sem_init(&CSemaphore, 0, 0);
+    return JuliaPipeReadFD;
+}
 
 
 void wake_callback_thread(void *outData, unsigned int outFrames)
@@ -47,15 +35,10 @@ void wake_callback_thread(void *outData, unsigned int outFrames)
     sem_post(&CSemaphore);
 }
 
-PaError open_stream(unsigned int sampleRate, unsigned int bufSize,
-                    jl_value_t *jlRemote)
+PaError open_stream(unsigned int sampleRate, unsigned int bufSize)
 {
     PaError err;
 
-    JuliaRemote = jlRemote;
-    sem_init(&CSemaphore, 0, 0);
-    RemotePutFunc = jl_get_function(jl_base_module, "put");
-    RemotePutArg = jl_box_int32(0);
 
     err = Pa_OpenDefaultStream(&AudioStream,
             0,          /* no input channels */
@@ -114,6 +97,7 @@ static int paCallback(const void *inputBuffer, void *outputBuffer,
                            void *userData)
 {
     unsigned int i;
+    unsigned char fd_data = 0;
 
     sem_wait(&CSemaphore);
     for(i=0; i<framesPerBuffer; i++)
@@ -121,6 +105,6 @@ static int paCallback(const void *inputBuffer, void *outputBuffer,
         ((float *)outputBuffer)[i] = ((float *)OutData)[i];
     }
     // TODO: copy the input data somewhere
-    jl_call2(RemotePutFunc, JuliaRemote, RemotePutArg);
+    write(JuliaPipeWriteFD, &fd_data, 1);
     return 0;
 }

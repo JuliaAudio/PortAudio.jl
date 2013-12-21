@@ -13,15 +13,22 @@ const PA_NO_ERROR = 0
 ############ Exported Functions #############
 
 function play_sin(sample_rate, buf_size)
-    jl_remote = RemoteRef()
+    precompile(process!, (Array{Float32}, Array{Float32}))
 
-    ccall((:open_stream, libportaudio_shim), PaError,
-          (Cuint, Cuint, RemoteRef),
-          sample_rate, buf_size, jl_remote)
+    fd = ccall((:make_pipe, libportaudio_shim), Cint, ())
 
     info("Launching Audio Task...")
-    yieldto(Task(audio_task))
-    info("Audio Task Yielded")
+    function task_wrapper()
+        audio_task(fd)
+    end
+    schedule(Task(task_wrapper))
+    yield()
+    info("Audio Task Yielded, starting the stream...")
+
+    ccall((:open_stream, libportaudio_shim), PaError,
+          (Cuint, Cuint),
+          sample_rate, buf_size)
+    info("Portaudio stream started.")
 end
 
 #function stop_sin()
@@ -32,7 +39,7 @@ end
 ############ Internal Functions ############
 
 const sample_rate = 44100
-const buf_size = 512
+const buf_size = 1024
 const freq = 100
 phase = 0.0
 
@@ -54,10 +61,13 @@ function wake_callback_thread(out_array)
           out_array, size(out_array, 1))
 end
 
-function audio_task()
+function audio_task(jl_filedesc)
     info("Audio Task Launched")
-    in_array = zeros(buf_size)
-    out_array = zeros(buf_size)
+    in_array = convert(Array{Float32}, zeros(buf_size))
+    out_array = convert(Array{Float32}, zeros(buf_size))
+    desc_bytes = Cchar[0]
+    jl_stream = fdio(jl_filedesc)
+    jl_rawfd = RawFD(jl_filedesc)
     while true
         process!(out_array, in_array)
         # wake the C code so it knows we've given it some more data
@@ -65,7 +75,8 @@ function audio_task()
         # wait for new data to be available from the sound card (and for it to
         # have processed our last frame of data). At some point we should do
         # something with the data we get from the callback
-        take(jl_remote)
+        wait(jl_rawfd, readable=true)
+        ccall((:read, ""), Clong, (Cint, Ptr{Void}, Culong), jl_filedesc, desc_bytes, 1)
     end
 end
 
