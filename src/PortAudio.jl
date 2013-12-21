@@ -1,5 +1,3 @@
-# thanks to Gustavo Goretkin for the start on this
-
 module PortAudio
 
 export play_sin, stop_sin
@@ -11,19 +9,65 @@ typealias PaStream Void
 
 const PA_NO_ERROR = 0
 
+
 ############ Exported Functions #############
 
-function play_sin()
-    err = ccall((:play_sin, libportaudio_shim), PaError, ())
-    handle_status(err)
+function play_sin(sample_rate, buf_size)
+    jl_remote = RemoteRef()
+
+    ccall((:open_stream, libportaudio_shim), PaError,
+          (Cuint, Cuint, RemoteRef),
+          sample_rate, buf_size, jl_remote)
+
+    info("Launching Audio Task...")
+    yieldto(Task(audio_task))
+    info("Audio Task Yielded")
 end
 
-function stop_sin()
-    err = ccall((:stop_sin, libportaudio_shim), PaError, ())
-    handle_status(err)
-end
+#function stop_sin()
+#    err = ccall((:stop_sin, libportaudio_shim), PaError, ())
+#    handle_status(err)
+#end
 
 ############ Internal Functions ############
+
+const sample_rate = 44100
+const buf_size = 512
+const freq = 100
+phase = 0.0
+
+function process!(out_array, in_array)
+    global phase
+    for i in 1:buf_size
+        out_array[i] = sin(phase)
+        phase += 2pi * freq / sample_rate
+        if phase > 2pi
+            phase -= 2pi
+        end
+    end
+    return buf_size
+end
+
+function wake_callback_thread(out_array)
+    ccall((:wake_callback_thread, libportaudio_shim), Void,
+          (Ptr{Void}, Cuint),
+          out_array, size(out_array, 1))
+end
+
+function audio_task()
+    info("Audio Task Launched")
+    in_array = zeros(buf_size)
+    out_array = zeros(buf_size)
+    while true
+        process!(out_array, in_array)
+        # wake the C code so it knows we've given it some more data
+        wake_callback_thread(out_array)
+        # wait for new data to be available from the sound card (and for it to
+        # have processed our last frame of data). At some point we should do
+        # something with the data we get from the callback
+        take(jl_remote)
+    end
+end
 
 function handle_status(err::PaError)
     if err != PA_NO_ERROR

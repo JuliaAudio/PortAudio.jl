@@ -9,18 +9,16 @@ endif
 .PHONY: all clean check-env default
 
 #check-env:
-#ifndef JULIA_ROOT
-#        $(error Environment variable JULIA_ROOT is not set.)
+#ifndef JULIA_INC
+#        $(error Environment variable JULIA_INC is not set.)
 #endif
 
-INC =-I"$(JULIA_ROOT)/usr/include"
+#INC =-I"$(JULIA_INC)"
 FLAGS =-Wall -Wno-strict-aliasing -fno-omit-frame-pointer -fPIC
 CFLAGS =-g
-LIBS =
+LIBS =-lportaudio -lrt
 
 OBJS = shim.o
-# libm can be removed later, it's just for the sin function used in testing
-LIBS += -lportaudio -lm
 
 # Figure out OS and architecture
 OS = $(shell uname)
