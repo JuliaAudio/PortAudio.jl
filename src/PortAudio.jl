@@ -45,7 +45,8 @@ end
 
 function play(node::AudioNode, stream::AudioStream)
     # TODO: don't break demeter
-    stream.mixer = vcat(stream.mixer.mix_inputs, [node])
+    stream.mixer.mix_inputs = vcat(stream.mixer.mix_inputs, [node])
+    return nothing
 end
 
 function play(node::AudioNode)
@@ -59,7 +60,7 @@ end
 function play(arr::AudioBuf, stream::AudioStream)
     # TODO: use a mixer as the root node so multiple playbacks get mixed
     player = ArrayPlayer(arr)
-    register(player, stream)
+    play(player, stream)
 end
 
 function play(arr::AudioBuf)
@@ -124,6 +125,9 @@ function audio_task(jl_filedesc::Integer, stream::AudioStream)
         # have processed our last frame of data). At some point we should do
         # something with the data we get from the callback
         wait(jl_rawfd, readable=true)
+        # read from the file descriptor so that it's empty. We're using ccall
+        # here because readbytes() was blocking the whole julia thread. This
+        # shouldn't block at all because we just waited on it
         ccall(:read, Clong, (Cint, Ptr{Void}, Culong), jl_filedesc, desc_bytes, 1)
     end
 end
