@@ -1,6 +1,10 @@
 module PortAudio
 
+# simple interface
 export play
+
+# AudioNodes
+export SinOsc, AudioMixer, ArrayPlayer, AudioInput
 
 typealias PaTime Cdouble
 typealias PaError Cint
@@ -47,10 +51,10 @@ end
 # Generates a sin tone at the given frequency
 
 type SinOsc <: AudioNode
-    freq::FloatingPoint
+    freq::Real
     phase::FloatingPoint
 
-    function SinOsc(freq::FloatingPoint)
+    function SinOsc(freq::Real)
         new(freq, 0.0)
     end
 end
@@ -119,16 +123,25 @@ end
 ############ Exported Functions #############
 
 
-function register(node::AudioNode, stream::AudioStream)
+function play(node::AudioNode, stream::AudioStream)
     stream.root_node = node
 end
 
+function play(node::AudioNode)
+    global _stream
+    if _stream == nothing
+        _stream = open_stream()
+    end
+    play(node, _stream)
+end
+
 function play(arr::AudioBuf, stream::AudioStream)
+    # TODO: use a mixer as the root node so multiple playbacks get mixed
     player = ArrayPlayer(arr)
     register(player, stream)
 end
 
-function play(arr)
+function play(arr::AudioBuf)
     global _stream
     if _stream == nothing
         _stream = open_stream()
