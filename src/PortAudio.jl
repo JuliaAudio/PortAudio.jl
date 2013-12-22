@@ -76,7 +76,7 @@ function audio_task(jl_filedesc)
         # have processed our last frame of data). At some point we should do
         # something with the data we get from the callback
         wait(jl_rawfd, readable=true)
-        ccall((:read, ""), Clong, (Cint, Ptr{Void}, Culong), jl_filedesc, desc_bytes, 1)
+        ccall(:read, Clong, (Cint, Ptr{Void}, Culong), jl_filedesc, desc_bytes, 1)
     end
 end
 

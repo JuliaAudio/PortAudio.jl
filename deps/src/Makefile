@@ -16,7 +16,9 @@ endif
 #INC =-I"$(JULIA_INC)"
 FLAGS =-Wall -Wno-strict-aliasing -fno-omit-frame-pointer -fPIC
 CFLAGS =-g
-LIBS =-lportaudio -lrt
+LIBS =-lportaudio
+LINUX_LIBS =-lrt
+LINUX_LDFLAGS =-rdynamic
 
 OBJS = shim.o
 
@@ -26,22 +28,24 @@ ifeq ($(OS), MINGW32_NT-6.1)
   OS=WINNT
 endif
 
-# file extensions
+# file extensions and platform-specific libs
 ifeq ($(OS), WINNT)
   SHLIB_EXT = dll
 else ifeq ($(OS), Darwin)
   SHLIB_EXT = dylib
 else
+  LIBS += $(LINUX_LIBS)
+  LDFLAGS += $(LINUX_LDFLAGS)
   SHLIB_EXT = so
 endif
 
 default: libportaudio_shim.$(SHLIB_EXT)
 
-%.o: %.c
+%.o: %.c Makefile
 	$(CC) $< -fPIC -c -o $@ $(INC) $(CFLAGS) $(FLAGS)
 
 libportaudio_shim.$(SHLIB_EXT): $(OBJS)
-	$(CC) $(OBJS) -rdynamic -shared -o $@ $(LDFLAGS) $(LIBS)
+	$(CC) $(OBJS) -shared -o $@ $(LDFLAGS) $(LIBS)
 
 clean:
 	rm -f *.o *.$(SHLIB_EXT)
