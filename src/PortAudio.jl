@@ -17,8 +17,9 @@ _stream = nothing
 # A node in the render tree
 abstract AudioNode
 
+typealias AudioSample Float32
 # A frame of audio, possibly multi-channel
-typealias AudioBuf Array{Float32}
+typealias AudioBuf Array{AudioSample}
 
 
 # Info about the hardware device
@@ -38,7 +39,7 @@ type AudioStream
 end
 
 function render(node::Nothing, device_input::AudioBuf, info::DeviceInfo)
-    return zeros(info.buf_size)
+    return zeros(AudioSample, info.buf_size)
 end
 
 #### SinOsc ####
@@ -55,7 +56,7 @@ type SinOsc <: AudioNode
 end
 
 function render(node::SinOsc, device_input::AudioBuf, info::DeviceInfo)
-    phase = Float32[1:info.buf_size] * 2pi * node.freq / info.sample_rate
+    phase = AudioSample[1:info.buf_size] * 2pi * node.freq / info.sample_rate
     phase += node.phase
     node.phase = phase[end]
     return sin(phase)
@@ -72,7 +73,7 @@ end
 function render(node::AudioMixer, device_input::AudioBuf, info::DeviceInfo)
     # TODO: we may want to pre-allocate this buffer and share between render
     # calls
-    mix_buffer = zeros(info.buf_size)
+    mix_buffer = zeros(AudioSample, info.buf_size)
     for in_node in node.mix_inputs
         mix_buffer += render(in_node, device_input, info)
     end
@@ -80,7 +81,7 @@ end
 
 #### Array Player ####
 
-# Plays a Vector{Float32} by rendering it out piece-by-piece
+# Plays a AudioBuf by rendering it out piece-by-piece
 
 type ArrayPlayer <: AudioNode
     arr::AudioBuf
@@ -91,12 +92,12 @@ type ArrayPlayer <: AudioNode
     end
 end
 
-function render(node::ArrayPlayer, device_input::Vector{Float32}, info::DeviceInfo)
+function render(node::ArrayPlayer, device_input::AudioBuf, info::DeviceInfo)
     i = node.arr_index
-    range_end = min(i + info.buf_size, length(node.arr))
+    range_end = min(i + info.buf_size-1, length(node.arr))
     output = node.arr[i:range_end]
     if length(output) < info.buf_size
-        output = vcat(output, zeros(info.buf_size - length(output)))
+        output = vcat(output, zeros(AudioSample, info.buf_size - length(output)))
     end
     node.arr_index = range_end + 1
     return output
@@ -110,7 +111,7 @@ type AudioInput <: AudioNode
     channel::Int
 end
 
-function render(node::AudioInput, device_input::Vector{Float32}, info::DeviceInfo)
+function render(node::AudioInput, device_input::AudioBuf, info::DeviceInfo)
     @assert size(device_input, 1) == info.buf_size
     return device_input[:, node.channel]
 end
@@ -177,12 +178,12 @@ end
 
 function audio_task(jl_filedesc::Integer, stream::AudioStream)
     info("Audio Task Launched")
-    in_array = convert(AudioBuf, zeros(stream.info.buf_size))
+    in_array = zeros(AudioSample, stream.info.buf_size)
     desc_bytes = Cchar[0]
     jl_stream = fdio(jl_filedesc)
     jl_rawfd = RawFD(jl_filedesc)
     while true
-        out_array = render(stream.root_node, in_array, stream.info)
+        out_array = render(stream.root_node, in_array, stream.info)::AudioBuf
         # wake the C code so it knows we've given it some more data
         wake_callback_thread(out_array)
         # wait for new data to be available from the sound card (and for it to
