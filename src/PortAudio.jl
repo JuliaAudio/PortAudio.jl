@@ -1,6 +1,6 @@
 module PortAudio
 
-export play_sin, stop_sin
+export play
 
 typealias PaTime Cdouble
 typealias PaError Cint
@@ -9,11 +9,32 @@ typealias PaStream Void
 
 const PA_NO_ERROR = 0
 
+# default stream used when none is given
+_stream = Nothing
+_process_tasks = Task[]
+
 
 ############ Exported Functions #############
 
-function play_sin(sample_rate, buf_size)
-    precompile(process!, (Array{Float32}, Array{Float32}))
+function play(arr::Array{Float32}, stream)
+
+end
+
+function play(arr)
+    global _stream
+    if _stream == Nothing
+        _stream = open_stream()
+    end
+    play(arr, _stream)
+end
+
+############ Internal Functions ############
+
+function open_stream(sample_rate::Int=44100, buf_size::Int=1024)
+    global _stream
+    if _stream != Nothing
+        error("Currently only 1 stream is supported at a time")
+    end
 
     fd = ccall((:make_pipe, libportaudio_shim), Cint, ())
 
@@ -22,26 +43,16 @@ function play_sin(sample_rate, buf_size)
         audio_task(fd)
     end
     schedule(Task(task_wrapper))
+    # TODO: test not yielding here
     yield()
     info("Audio Task Yielded, starting the stream...")
 
-    ccall((:open_stream, libportaudio_shim), PaError,
-          (Cuint, Cuint),
-          sample_rate, buf_size)
+    err = ccall((:open_stream, libportaudio_shim), PaError,
+                (Cuint, Cuint),
+                sample_rate, buf_size)
+    handle_status(err)
     info("Portaudio stream started.")
 end
-
-#function stop_sin()
-#    err = ccall((:stop_sin, libportaudio_shim), PaError, ())
-#    handle_status(err)
-#end
-
-############ Internal Functions ############
-
-const sample_rate = 44100
-const buf_size = 1024
-const freq = 100
-phase = 0.0
 
 function process!(out_array, in_array)
     global phase
