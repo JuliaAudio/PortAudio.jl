@@ -58,6 +58,8 @@ type ArrayPlayer <: AudioNode
 end
 
 function render(node::ArrayPlayer, device_input::AudioBuf, info::DeviceInfo)
+    # TODO: this should remove itself from the render tree when playback is
+    # complete
     i = node.arr_index
     range_end = min(i + info.buf_size-1, length(node.arr))
     output = node.arr[i:range_end]

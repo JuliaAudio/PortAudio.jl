@@ -22,6 +22,10 @@ typealias AudioBuf Array{AudioSample}
 # A node in the render tree
 abstract AudioNode
 
+# A stream of audio (for instance that writes to hardware)
+# All AudioStream subtypes should have a mixer and info field
+abstract AudioStream
+
 # Info about the hardware device
 type DeviceInfo
     sample_rate::Integer
@@ -30,11 +34,11 @@ end
 
 include("nodes.jl")
 
-type AudioStream
+type PortAudioStream <: AudioStream
     mixer::AudioMixer
     info::DeviceInfo
 
-    function AudioStream(sample_rate, buf_size)
+    function PortAudioStream(sample_rate, buf_size)
         mixer = AudioMixer()
         new(mixer, DeviceInfo(sample_rate, buf_size))
     end
@@ -43,37 +47,55 @@ end
 
 ############ Exported Functions #############
 
+# TODO: we should have "stop" functions that remove nodes from the render tree
+
+# Play an AudioNode by adding it as an input to the root mixer node
 function play(node::AudioNode, stream::AudioStream)
     # TODO: don't break demeter
-    stream.mixer.mix_inputs = vcat(stream.mixer.mix_inputs, [node])
+    append!(stream.mixer.mix_inputs, [node])
     return nothing
 end
 
+# If the stream is not given, use the default global stream
 function play(node::AudioNode)
     global _stream
     if _stream == nothing
-        _stream = open_stream()
+        _stream = open_portaudio_stream()
     end
     play(node, _stream)
 end
 
-function play(arr::AudioBuf, stream::AudioStream)
-    # TODO: use a mixer as the root node so multiple playbacks get mixed
+# Allow users to play a raw array by wrapping it in an ArrayPlayer
+function play(arr::AudioBuf, args...)
     player = ArrayPlayer(arr)
-    play(player, stream)
+    play(player, args...)
 end
 
-function play(arr::AudioBuf)
-    global _stream
-    if _stream == nothing
-        _stream = open_stream()
-    end
-    play(arr, _stream)
+# If the array is the wrong floating type, convert it
+function play{T <: FloatingPoint}(arr::Array{T}, args...)
+    arr = convert(AudioBuf, arr)
+    play(arr, args...)
+end
+
+# If the array is an integer type, scale to [-1, 1] floating point
+
+# integer audio can be slightly (by 1) more negative than positive,
+# so we just scale so that +/- typemax(T) becomes +/- 1
+function play{T <: Signed}(arr::Array{T}, args...)
+    arr = arr / typemax(T)
+    play(arr, args...)
+end
+
+function play{T <: Unsigned}(arr::Array{T}, args...)
+    zero = (typemax(T) + 1) / 2
+    range = floor(typemax(T) / 2)
+    arr = (arr - zero) / range
+    play(arr, args...)
 end
 
 ############ Internal Functions ############
 
-function open_stream(sample_rate::Int=44100, buf_size::Int=1024)
+function open_portaudio_stream(sample_rate::Int=44100, buf_size::Int=1024)
     # TODO: handle more streams
     global _stream
     if _stream != nothing
@@ -82,7 +104,7 @@ function open_stream(sample_rate::Int=44100, buf_size::Int=1024)
 
     # TODO: when we support multiple streams we won't set _stream here.
     # this is just to ensure that only one stream is ever opened
-    _stream = AudioStream(sample_rate, buf_size)
+    _stream = PortAudioStream(sample_rate, buf_size)
 
 
     fd = ccall((:make_pipe, libportaudio_shim), Cint, ())
@@ -111,7 +133,7 @@ function wake_callback_thread(out_array)
           out_array, size(out_array, 1))
 end
 
-function audio_task(jl_filedesc::Integer, stream::AudioStream)
+function audio_task(jl_filedesc::Integer, stream::PortAudioStream)
     info("Audio Task Launched")
     in_array = zeros(AudioSample, stream.info.buf_size)
     desc_bytes = Cchar[0]
