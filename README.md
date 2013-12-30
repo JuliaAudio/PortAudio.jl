@@ -16,10 +16,10 @@ Basic Array Playback
 --------------------
 
 Arrays in various formats can be played through your soundcard. Currently the
-native format that is delivered to the PortAudio backend is `Float32` in the
-range of `[-1, 1]`. Arrays in other sizes of float are `convert`ed. Arrays
+native format that is delivered to the PortAudio backend is Float32 in the
+range of [-1, 1]. Arrays in other sizes of float are converted. Arrays
 in Signed or Unsigned Integer types are scaled so that the full range is
-mapped to `[-1, 1]` floating point values.
+mapped to [-1, 1] floating point values.
 
 To play a 1-second burst of noise:
 
@@ -30,9 +30,9 @@ AudioNodes
 ----------
 
 In addition to the basic `play` function you can create more complex networks
-of `AudioNode`s in a render chain. In fact, when using the basic `play` to play
-an Array, behind the scenes an instance of the `ArrayPlayer` type is created
-and added to the master `AudioMixer` inputs.
+of AudioNodes in a render chain. In fact, when using the basic `play` to play
+an Array, behind the scenes an instance of the ArrayPlayer type is created
+and added to the master AudioMixer inputs.
 
 To explictly do the same as above:
 
@@ -63,8 +63,8 @@ tests.
 
 Currently only 1 stream at a time is supported so there's no reason to provide
 an explicit stream to the `play` function. The stream has a root mixer field
-which is an instance of the `AudioMixer` type, so that multiple `AudioNode`s
+which is an instance of the AudioMixer type, so that multiple AudioNodes
 can be heard at the same time. Whenever a new frame of audio is needed by the
 sound card, the stream calls the `render` method on the root audio mixer, which
-will in turn call the `render` methods on any input `AudioNode`s that are set
+will in turn call the `render` methods on any input AudioNodes that are set
 up as inputs.
