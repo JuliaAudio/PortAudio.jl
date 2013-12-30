@@ -1,7 +1,7 @@
 module PortAudio
 
+# export the basic API
 export play
-export SinOsc, AudioMixer, ArrayPlayer, AudioInput
 
 typealias PaTime Cdouble
 typealias PaError Cint

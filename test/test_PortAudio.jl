@@ -59,3 +59,12 @@ test_stream = TestAudioStream()
 player = play(ui8, test_stream)
 @test_approx_eq(process(test_stream)[1:255],
                    convert(PortAudio.AudioBuf, linspace(-1.0, 1.0, 255)))
+
+
+#info("Testing AudioNode Stopping...")
+#test_stream = TestAudioStream()
+#node = SinOsc(440)
+#play(node, test_stream)
+#process(test_stream)
+#stop(node)
+#@test process(test_stream) == zeros(PortAudio.AudioSample, TEST_BUF_SIZE)

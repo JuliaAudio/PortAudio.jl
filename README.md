@@ -3,16 +3,68 @@ PortAudio.jl
 
 [![Build Status](https://travis-ci.org/ssfrr/PortAudio.jl.png)](https://travis-ci.org/ssfrr/PortAudio.jl)
 
-This is a Julia interface to PortAudio. It is currently under heavy development
-and certainly not even close to being useful.
+This is a Julia interface to PortAudio. It is currently under heavy
+development. The API could change, there will be bugs, there are important
+missing features.
 
 If you want to try it anyways, from your julia console:
 
     julia> Pkg.clone("https://github.com/ssfrr/PortAudio.jl.git")
     julia> Pkg.build("PortAudio")
 
-Right now you can just play and stop some sin tones in your speakers:
+Basic Array Playback
+--------------------
 
-    julia> using PortAudio
-    julia> play_sin()
-    julia> stop_sin()
+Arrays in various formats can be played through your soundcard. Currently the
+native format that is delivered to the PortAudio backend is `Float32` in the
+range of `[-1, 1]`. Arrays in other sizes of float are `convert`ed. Arrays
+in Signed or Unsigned Integer types are scaled so that the full range is
+mapped to `[-1, 1]` floating point values.
+
+To play a 1-second burst of noise:
+
+    julia> v = rand(44100) * 0.1
+    julia> play(v)
+
+AudioNodes
+----------
+
+In addition to the basic `play` function you can create more complex networks
+of `AudioNode`s in a render chain. In fact, when using the basic `play` to play
+an Array, behind the scenes an instance of the `ArrayPlayer` type is created
+and added to the master `AudioMixer` inputs.
+
+To explictly do the same as above:
+
+    julia> v = rand(44100) * 0.1
+    julia> player = ArrayPlayer(v)
+    julia> play(player)
+
+To generate 2 sin tones:
+
+    julia> osc1 = SinOsc(440)
+    julia> osc2 = SinOsc(660)
+    julia> play(osc1)
+    julia> play(osc2)
+
+All AudioNodes should implement a `render` function that can be called to
+retreive the next block of audio.
+
+AudioStreams
+------------
+
+AudioStreams represent a destination for audio, such as the sound card. The
+`play` function attaches AudioNodes to the default stream unless a stream is
+given as the 2nd argument.
+
+AudioStream is an abstract type, which currently has a PortAudioStream subtype
+that writes to the sound card, and a TestAudioStream that is used in the unit
+tests.
+
+Currently only 1 stream at a time is supported so there's no reason to provide
+an explicit stream to the `play` function. The stream has a root mixer field
+which is an instance of the `AudioMixer` type, so that multiple `AudioNode`s
+can be heard at the same time. Whenever a new frame of audio is needed by the
+sound card, the stream calls the `render` method on the root audio mixer, which
+will in turn call the `render` methods on any input `AudioNode`s that are set
+up as inputs.

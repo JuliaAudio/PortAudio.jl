@@ -1,3 +1,5 @@
+export SinOsc, AudioMixer, ArrayPlayer, AudioInput
+
 #### SinOsc ####
 
 # Generates a sin tone at the given frequency

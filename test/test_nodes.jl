@@ -34,3 +34,12 @@ test2 = TestNode()
 mix = AudioMixer([test1, test2])
 @test PortAudio.render(mix, dev_input, test_info) == 2 * PortAudio.AudioSample[1:test_info.buf_size]
 
+info("Testing SinOSC...")
+freq = 440
+t = linspace(1 / test_info.sample_rate,
+             test_info.buf_size / test_info.sample_rate,
+             test_info.buf_size)
+test_vect = convert(PortAudio.AudioBuf, sin(2pi * t * freq))
+osc = SinOsc(freq)
+rendered = PortAudio.render(osc, dev_input, test_info)
+@test_approx_eq(rendered, test_vect)
