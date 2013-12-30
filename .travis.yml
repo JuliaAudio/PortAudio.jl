@@ -10,4 +10,4 @@ before_install:
   - sudo apt-get install libpcre3-dev julia -y
 script:
   - julia -e 'Pkg.init(); run(`ln -s $(pwd()) $(Pkg.dir("PortAudio"))`); Pkg.pin("PortAudio"); Pkg.resolve(); Pkg.add("BinDeps"); Pkg.build("PortAudio")'
-  - julia -e 'using PortAudio; @assert isdefined(:PortAudio); @assert typeof(PortAudio) === Module'
+  - test/test.jl
