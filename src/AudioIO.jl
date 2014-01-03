@@ -1,7 +1,7 @@
 module AudioIO
 
 # export the basic API
-export play
+export play, stop
 
 # default stream used when none is given
 _stream = nothing
@@ -74,6 +74,10 @@ function play{T <: Unsigned}(arr::Array{T}, args...)
     range = floor(typemax(T) / 2)
     arr = (arr - zero) / range
     play(arr, args...)
+end
+
+function stop(node::AudioNode)
+    node.active = false
 end
 
 end # module AudioIO

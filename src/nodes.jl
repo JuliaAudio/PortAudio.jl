@@ -5,11 +5,12 @@ export SinOsc, AudioMixer, ArrayPlayer, AudioInput
 # Generates a sin tone at the given frequency
 
 type SinOsc <: AudioNode
+    active::Bool
     freq::Real
     phase::FloatingPoint
 
     function SinOsc(freq::Real)
-        new(freq, 0.0)
+        new(true, freq, 0.0)
     end
 end
 
@@ -17,7 +18,7 @@ function render(node::SinOsc, device_input::AudioBuf, info::DeviceInfo)
     phase = AudioSample[1:info.buf_size] * 2pi * node.freq / info.sample_rate
     phase += node.phase
     node.phase = phase[end]
-    return sin(phase), true
+    return sin(phase), node.active
 end
 
 #### AudioMixer ####
@@ -25,14 +26,15 @@ end
 # Mixes a set of inputs equally
 
 type AudioMixer <: AudioNode
+    active::Bool
     mix_inputs::Array{AudioNode}
 
     function AudioMixer{T <: AudioNode}(mix_inputs::Array{T})
-        new(mix_inputs)
+        new(true, mix_inputs)
     end
 
     function AudioMixer()
-        new(AudioNode[])
+        new(true, AudioNode[])
     end
 end
 
@@ -44,7 +46,7 @@ function render(node::AudioMixer, device_input::AudioBuf, info::DeviceInfo)
         in_buffer, active = render(in_node, device_input, info)
         mix_buffer += in_buffer
     end
-    return mix_buffer, true
+    return mix_buffer, node.active
 end
 
 #### Array Player ####
@@ -52,11 +54,12 @@ end
 # Plays a AudioBuf by rendering it out piece-by-piece
 
 type ArrayPlayer <: AudioNode
+    active::Bool
     arr::AudioBuf
     arr_index::Int
 
     function ArrayPlayer(arr::AudioBuf)
-        new(arr, 1)
+        new(true, arr, 1)
     end
 end
 
@@ -67,10 +70,13 @@ function render(node::ArrayPlayer, device_input::AudioBuf, info::DeviceInfo)
     range_end = min(i + info.buf_size-1, length(node.arr))
     output = node.arr[i:range_end]
     if length(output) < info.buf_size
+        # we're finished with the array, pad with zeros and clear our active
+        # flag
         output = vcat(output, zeros(AudioSample, info.buf_size - length(output)))
+        node.active = false
     end
     node.arr_index = range_end + 1
-    return output, true
+    return output, node.active
 end
 
 #### AudioInput ####
