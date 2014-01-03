@@ -1,16 +1,18 @@
-PortAudio.jl
-============
+AudioIO.jl
+==========
 
-[![Build Status](https://travis-ci.org/ssfrr/PortAudio.jl.png)](https://travis-ci.org/ssfrr/PortAudio.jl)
+[![Build Status](https://travis-ci.org/ssfrr/AudioIO.jl.png)](https://travis-ci.org/ssfrr/AudioIO.jl)
 
-This is a Julia interface to PortAudio. It is currently under heavy
-development. The API could change, there will be bugs, there are important
-missing features.
+AudioIO is a Julia library for interfacing to audio streams, which include
+playing to and recording from sound cards, reading and writing audio files,
+sending to network audio streams, etc. Currently only playing to the sound card
+through PortAudio is supported. It is under heavy development, so the API could
+change, there will be bugs, there are important missing features.
 
 If you want to try it anyways, from your julia console:
 
-    julia> Pkg.clone("https://github.com/ssfrr/PortAudio.jl.git")
-    julia> Pkg.build("PortAudio")
+    julia> Pkg.clone("https://github.com/ssfrr/AudioIO.jl.git")
+    julia> Pkg.build("AudioIO")
 
 Basic Array Playback
 --------------------

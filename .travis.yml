@@ -9,5 +9,5 @@ before_install:
   - sudo apt-get update -qq -y
   - sudo apt-get install libpcre3-dev julia -y
 script:
-  - julia -e 'Pkg.init(); run(`ln -s $(pwd()) $(Pkg.dir("PortAudio"))`); Pkg.pin("PortAudio"); Pkg.resolve(); Pkg.add("BinDeps"); Pkg.build("PortAudio")'
+  - julia -e 'Pkg.init(); run(`ln -s $(pwd()) $(Pkg.dir("AudioIO"))`); Pkg.pin("AudioIO"); Pkg.resolve(); Pkg.add("BinDeps"); Pkg.build("AudioIO")'
   - test/test.jl

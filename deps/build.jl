@@ -13,7 +13,7 @@ provides(AptGet,
 
 @BinDeps.install [:libportaudio => :libportaudio]
 
-cd(joinpath(Pkg.dir(), "PortAudio", "deps", "src") )
+cd(joinpath(Pkg.dir(), "AudioIO", "deps", "src") )
 run(`make`)
 if (!ispath("../usr"))
   run(`mkdir ../usr`)

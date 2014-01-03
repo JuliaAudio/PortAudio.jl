@@ -1,4 +1,4 @@
-module PortAudio
+module AudioIO
 
 # export the basic API
 export play
@@ -172,15 +172,13 @@ end
 ########### Module Initialization ##############
 
 const libportaudio_shim = find_library(["libportaudio_shim",],
-        [Pkg.dir("PortAudio", "deps", "usr", "lib"),])
+        [Pkg.dir("AudioIO", "deps", "usr", "lib"),])
 
-@assert(libportaudio_shim != "", "Failed to find required library " *
-        "libportaudio_shim. Try re-running the package script using " *
-        "Pkg.build(\"PortAudio\"), then reloading with reload(\"PortAudio\")")
+@assert(libportaudio_shim != "", "Failed to find required library libportaudio_shim. Try re-running the package script using Pkg.build(\"AudioIO\"), then reloading with reload(\"AudioIO\")")
 
 init_portaudio()
 
-end # module PortAudio
+end # module AudioIO
 
 
 #type PaStreamCallbackTimeInfo
