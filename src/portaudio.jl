@@ -88,7 +88,8 @@ function portaudio_task(jl_filedesc::Integer, stream::PortAudioStream)
     jl_stream = fdio(jl_filedesc)
     jl_rawfd = RawFD(jl_filedesc)
     while true
-        out_array = render(stream.mixer, in_array, stream.info)::AudioBuf
+        # assume the root mixer is always active
+        out_array, _ = render(stream.mixer, in_array, stream.info)::AudioBuf
         # wake the C code so it knows we've given it some more data
         wake_callback_thread(out_array)
         # wait for new data to be available from the sound card (and for it to

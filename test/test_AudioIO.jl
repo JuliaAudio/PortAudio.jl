@@ -18,7 +18,8 @@ end
 # to simulate the audio callback that's normally called by the device.
 function process(stream::TestAudioStream)
     in_array = zeros(AudioIO.AudioSample, stream.info.buf_size)
-    return AudioIO.render(stream.mixer, in_array, stream.info)
+    out_array, _ = AudioIO.render(stream.mixer, in_array, stream.info)
+    return out_array
 end
 
 

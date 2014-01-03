@@ -17,7 +17,7 @@ function render(node::SinOsc, device_input::AudioBuf, info::DeviceInfo)
     phase = AudioSample[1:info.buf_size] * 2pi * node.freq / info.sample_rate
     phase += node.phase
     node.phase = phase[end]
-    return sin(phase)
+    return sin(phase), true
 end
 
 #### AudioMixer ####
@@ -41,9 +41,10 @@ function render(node::AudioMixer, device_input::AudioBuf, info::DeviceInfo)
     # calls
     mix_buffer = zeros(AudioSample, info.buf_size)
     for in_node in node.mix_inputs
-        mix_buffer += render(in_node, device_input, info)
+        in_buffer, active = render(in_node, device_input, info)
+        mix_buffer += in_buffer
     end
-    return mix_buffer
+    return mix_buffer, true
 end
 
 #### Array Player ####
@@ -69,7 +70,7 @@ function render(node::ArrayPlayer, device_input::AudioBuf, info::DeviceInfo)
         output = vcat(output, zeros(AudioSample, info.buf_size - length(output)))
     end
     node.arr_index = range_end + 1
-    return output
+    return output, true
 end
 
 #### AudioInput ####
@@ -82,5 +83,5 @@ end
 
 function render(node::AudioInput, device_input::AudioBuf, info::DeviceInfo)
     @assert size(device_input, 1) == info.buf_size
-    return device_input[:, node.channel]
+    return device_input[:, node.channel], true
 end
