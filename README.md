@@ -34,7 +34,11 @@ AudioNodes
 In addition to the basic `play` function you can create more complex networks
 of AudioNodes in a render chain. In fact, when using the basic `play` to play
 an Array, behind the scenes an instance of the ArrayPlayer type is created
-and added to the master AudioMixer inputs.
+and added to the master AudioMixer inputs. Audionodes also implement a `stop`
+function, which will remove them from the render graph. When an implicit
+AudioNode is created automatically, such as when using `play` on an Array, the
+`play` function should return the audio node that is playing the Array, so it
+can be stopped if desired.
 
 To explictly do the same as above:
 
@@ -48,16 +52,18 @@ To generate 2 sin tones:
     julia> osc2 = SinOsc(660)
     julia> play(osc1)
     julia> play(osc2)
+    julia> stop(osc1)
+    julia> stop(osc2)
 
-All AudioNodes should implement a `render` function that can be called to
+All AudioNodes must implement a `render` function that can be called to
 retreive the next block of audio.
 
 AudioStreams
 ------------
 
-AudioStreams represent a destination for audio, such as the sound card. The
-`play` function attaches AudioNodes to the default stream unless a stream is
-given as the 2nd argument.
+AudioStreams represent an external source or destination for audio, such as the
+sound card. The `play` function attaches AudioNodes to the default stream
+unless a stream is given as the 2nd argument.
 
 AudioStream is an abstract type, which currently has a PortAudioStream subtype
 that writes to the sound card, and a TestAudioStream that is used in the unit
