@@ -1,7 +1,7 @@
 AudioIO.jl
 ==========
 
-[![Build Status](https://travis-ci.org/ssfrr/AudioIO.jl.png)](https://travis-ci.org/ssfrr/AudioIO.jl)
+[![Build Status](https://travis-ci.org/ssfrr/AudioIO.jl.png?branch=master)](https://travis-ci.org/ssfrr/AudioIO.jl)
 
 AudioIO is a Julia library for interfacing to audio streams, which include
 playing to and recording from sound cards, reading and writing audio files,
