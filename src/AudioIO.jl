@@ -30,13 +30,11 @@ include("portaudio.jl")
 
 ############ Exported Functions #############
 
-# TODO: we should have "stop" functions that remove nodes from the render tree
-
 # Play an AudioNode by adding it as an input to the root mixer node
 function play(node::AudioNode, stream::AudioStream)
-    # TODO: don't break demeter
-    append!(stream.mixer.mix_inputs, [node])
-    return nothing
+    node.active = true
+    add_input(stream.mixer, node)
+    return node
 end
 
 # If the stream is not given, use the default global PortAudio stream
@@ -78,6 +76,7 @@ end
 
 function stop(node::AudioNode)
     node.active = false
+    return node
 end
 
 end # module AudioIO

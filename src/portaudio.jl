@@ -87,19 +87,27 @@ function portaudio_task(jl_filedesc::Integer, stream::PortAudioStream)
     desc_bytes = Cchar[0]
     jl_stream = fdio(jl_filedesc)
     jl_rawfd = RawFD(jl_filedesc)
-    while true
-        # assume the root mixer is always active
-        out_array, _ = render(stream.mixer, in_array, stream.info)::AudioBuf
-        # wake the C code so it knows we've given it some more data
-        wake_callback_thread(out_array)
-        # wait for new data to be available from the sound card (and for it to
-        # have processed our last frame of data). At some point we should do
-        # something with the data we get from the callback
-        wait(jl_rawfd, readable=true)
-        # read from the file descriptor so that it's empty. We're using ccall
-        # here because readbytes() was blocking the whole julia thread. This
-        # shouldn't block at all because we just waited on it
-        ccall(:read, Clong, (Cint, Ptr{Void}, Culong), jl_filedesc, desc_bytes, 1)
+    try
+        while true
+            # assume the root mixer is always active
+            out_array::AudioBuf, _::Bool = render(stream.mixer, in_array,
+                                                  stream.info)
+            # wake the C code so it knows we've given it some more data
+            wake_callback_thread(out_array)
+            # wait for new data to be available from the sound card (and for it
+            # to have processed our last frame of data). At some point we
+            # should do something with the data we get from the callback
+            wait(jl_rawfd, readable=true)
+            # read from the file descriptor so that it's empty. We're using
+            # ccall here because readbytes() was blocking the whole julia
+            # thread. This shouldn't block at all because we just waited on it
+            ccall(:read, Clong, (Cint, Ptr{Void}, Culong),
+                  jl_filedesc, desc_bytes, 1)
+        end
+    finally
+        # TODO: we need to close the stream here. Otherwise the audio callback
+        # will segfault accessing the output array if there were exceptions
+        # thrown in the render loop
     end
 end
 

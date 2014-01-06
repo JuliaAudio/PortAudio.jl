@@ -35,8 +35,6 @@ f32 = convert(Array{Float32}, sin(phase))
 test_stream = TestAudioStream()
 player = play(f32, test_stream)
 @test process(test_stream) == f32[1:TEST_BUF_SIZE]
-#stop(player)
-#@test process(test_stream) == zeros(AudioIO.AudioSample, TEST_BUF_SIZE)
 
 
 info("Testing Playing Float64 arrays...")
@@ -62,10 +60,15 @@ player = play(ui8, test_stream)
                    convert(AudioIO.AudioBuf, linspace(-1.0, 1.0, 255)))
 
 
-#info("Testing AudioNode Stopping...")
-#test_stream = TestAudioStream()
-#node = SinOsc(440)
-#play(node, test_stream)
-#process(test_stream)
-#stop(node)
-#@test process(test_stream) == zeros(AudioIO.AudioSample, TEST_BUF_SIZE)
+info("Testing AudioNode Stopping...")
+test_stream = TestAudioStream()
+node = SinOsc(440)
+@test !node.active
+play(node, test_stream)
+@test node.active
+process(test_stream)
+stop(node)
+@test !node.active
+# give the render task a chance to clean up
+process(test_stream)
+@test process(test_stream) == zeros(AudioIO.AudioSample, TEST_BUF_SIZE)

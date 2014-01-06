@@ -10,7 +10,7 @@ type SinOsc <: AudioNode
     phase::FloatingPoint
 
     function SinOsc(freq::Real)
-        new(true, freq, 0.0)
+        new(false, freq, 0.0)
     end
 end
 
@@ -25,26 +25,67 @@ end
 
 # Mixes a set of inputs equally
 
+# a convenience alias used in the array of mix inputs
+typealias MaybeAudioNode Union(AudioNode, Nothing)
+const MAX_MIXER_INPUTS = 32
+
 type AudioMixer <: AudioNode
     active::Bool
-    mix_inputs::Array{AudioNode}
+    mix_inputs::Array{MaybeAudioNode}
 
     function AudioMixer{T <: AudioNode}(mix_inputs::Array{T})
-        new(true, mix_inputs)
+        input_array = Array(MaybeAudioNode, MAX_MIXER_INPUTS)
+        fill!(input_array, nothing)
+        for (i, node) in enumerate(mix_inputs)
+            input_array[i] = node
+        end
+        new(false, input_array)
     end
 
     function AudioMixer()
-        new(true, AudioNode[])
+        AudioMixer(AudioNode[])
     end
 end
 
+# TODO: at some point we need to figure out what the general API is for wiring
+# up AudioNodes to each other
+function add_input(mixer::AudioMixer, in_node::AudioNode)
+    for (i, node) in enumerate(mixer.mix_inputs)
+        if node === nothing
+            mixer.mix_inputs[i] = in_node
+            return
+        end
+    end
+    error("Mixer input array is full")
+end
+
+# removes the given node from the mix inputs. If the node isn't an input the
+# function returns without error
+function remove_input(mixer::AudioMixer, in_node::AudioNode)
+    for (i, node) in enumerate(mixer.mix_inputs)
+        if node === in_node
+            mixer.mix_inputs[i] = nothing
+            return
+        end
+    end
+    # not an error if we didn't find it
+end
+
 function render(node::AudioMixer, device_input::AudioBuf, info::DeviceInfo)
-    # TODO: we may want to pre-allocate this buffer and share between render
-    # calls
+    # TODO: we probably want to pre-allocate this buffer and share between
+    # render calls. Unfortunately we don't know the right size when the object
+    # is created, so maybe we check the size on every render call and only
+    # re-allocate when the size changes? I suppose that's got to be cheaper
+    # than the GC and allocation every frame
     mix_buffer = zeros(AudioSample, info.buf_size)
     for in_node in node.mix_inputs
-        in_buffer, active = render(in_node, device_input, info)
-        mix_buffer += in_buffer
+        if in_node !== nothing
+            in_buffer, active = render(in_node, device_input, info)
+            mix_buffer += in_buffer
+            if !active
+                remove_input(node, in_node)
+            end
+        end
     end
     return mix_buffer, node.active
 end
@@ -59,7 +100,7 @@ type ArrayPlayer <: AudioNode
     arr_index::Int
 
     function ArrayPlayer(arr::AudioBuf)
-        new(true, arr, 1)
+        new(false, arr, 1)
     end
 end
 
@@ -84,10 +125,15 @@ end
 # Renders incoming audio input from the hardware
 
 type AudioInput <: AudioNode
+    active::Bool
     channel::Int
+
+    function AudioInput(channel::Int)
+        new(false, channel)
+    end
 end
 
 function render(node::AudioInput, device_input::AudioBuf, info::DeviceInfo)
     @assert size(device_input, 1) == info.buf_size
-    return device_input[:, node.channel], true
+    return device_input[:, node.channel], node.active
 end
