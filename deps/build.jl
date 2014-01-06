@@ -7,9 +7,15 @@ ENV["JULIA_ROOT"] = abspath(JULIA_HOME, "../../")
 libportaudio = library_dependency("libportaudio")
 
 # TODO: add other providers with correct names
-provides(AptGet,
-    {"portaudio19-dev" => libportaudio}
-)
+provides(AptGet, {"portaudio19-dev" => libportaudio})
+
+@osx_only begin
+    if Pkg.installed("Homebrew") === nothing
+        error("Homebrew package not installed, please run Pkg.add(\"Homebrew\")")
+    end
+    using Homebrew
+    provides(Homebrew.HB, {"portaudio" => libportaudio})
+end
 
 @BinDeps.install [:libportaudio => :libportaudio]
 
