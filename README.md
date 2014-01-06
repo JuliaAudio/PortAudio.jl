@@ -9,9 +9,16 @@ sending to network audio streams, etc. Currently only playing to the sound card
 through PortAudio is supported. It is under heavy development, so the API could
 change, there will be bugs, there are important missing features.
 
-If you want to try it anyways, from your julia console:
+Installation
+------------
 
-    julia> Pkg.clone("https://github.com/ssfrr/AudioIO.jl.git")
+To install the latest release version, simply run
+
+    julia> Pkg.add("AudioIO")
+
+If you want to install the lastest master, it's almost as easy:
+
+    julia> Pkg.clone("AudioIO")
     julia> Pkg.build("AudioIO")
 
 Basic Array Playback
