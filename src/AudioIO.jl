@@ -27,6 +27,7 @@ end
 
 include("nodes.jl")
 include("portaudio.jl")
+include("sndfile.jl")
 
 ############ Exported Functions #############
 

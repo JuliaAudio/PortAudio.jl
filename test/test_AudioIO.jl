@@ -72,3 +72,16 @@ stop(node)
 # give the render task a chance to clean up
 process(test_stream)
 @test process(test_stream) == zeros(AudioIO.AudioSample, TEST_BUF_SIZE)
+
+info("Testing libsndfile read")
+samplerate = 44100
+freq = 440
+t = linspace(0, 2, 2 * samplerate)
+phase = 2 * pi * freq * t
+reference = int16((2 ^ 15 - 1) * sin(phase))
+
+f = openAudio("test/sinwave.flac")
+@test f.sfinfo.channels == 1
+@test f.sfinfo.frames == 2 * samplerate
+actual = readFrames(f, 2 * samplerate)
+@test_approx_eq(reference, actual)
