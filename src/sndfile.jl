@@ -1,4 +1,4 @@
-export openAudio, closeAudio, readFrames
+export openAudio, closeAudio, readFrames, FileInput
 
 const sndfile = "libsndfile"
 
@@ -49,9 +49,9 @@ end
 function readFrames(file::Sndfile, nframes::Integer, dtype::Type = Int16)
     arr = []
     if file.sfinfo.channels == 2
-        arr = Array(dtype, 2, nframes)
+        arr = zeros(dtype, 2, nframes)
     else
-        arr = Array(dtype, nframes)
+        arr = zeros(dtype, nframes)
     end
 
     if dtype == Int16
@@ -73,12 +73,36 @@ function readFrames(file::Sndfile, nframes::Integer, dtype::Type = Int16)
     end
 
     if nread == 0
-        return []
+        return Nothing
     end
 
-    if file.sfinfo.channels == 2
-        return arr[:, 1:nread]
+    return arr
+end
+
+type FileInput <: AudioNode
+    active::Bool
+    file::Sndfile
+
+    function FileInput(path::String)
+        node = new(false, openAudio(path))
+        finalizer(node, node -> closeAudio(node.file))
+        return node
+    end
+end
+
+function render(node::FileInput, device_input::AudioBuf, info::DeviceInfo)
+    @assert node.file.sfinfo.samplerate == info.sample_rate
+
+    audio = readFrames(node.file, info.buf_size, AudioSample)
+
+    if audio == Nothing
+        return zeros(AudioSample, info.buf_size), false
     end
 
-    return arr[1:nread]
+    # if the file is stereo, mix the two channels together
+    if node.file.sfinfo.channels == 2
+        return (audio[1, :] / 2) + (audio[2, :] / 2), node.active
+    end
+
+    return audio, node.active
 end
