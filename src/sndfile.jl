@@ -1,7 +1,6 @@
-export openAudio, closeAudio, readFrames, FileInput
+export af_open, FilePlayer
 
 const sndfile = "libsndfile"
-
 
 const SFM_READ = int32(0x10)
 const SFM_WRITE = int32(0x20)
@@ -13,14 +12,21 @@ type SF_INFO
     format::Int32
     sections::Int32
     seekable::Int32
+
+    function SF_INFO(frames::Integer, samplerate::Integer, channels::Integer,
+                     format::Integer, sections::Integer, seekable::Integer)
+        new(int64(frames), int32(samplerate), int32(channels), int32(format),
+            int32(sections), int32(seekable))
+    end
 end
 
-type Sndfile
+type AudioFile
     filePtr::Ptr{Void}
     sfinfo::SF_INFO
 end
 
-function openAudio(path::String)
+function af_open(path::String, mode::String="r")
+    # TODO: handle write/append modes
     sfinfo = SF_INFO(0, 0, 0, 0, 0, 0)
     filePtr = ccall((:sf_open, sndfile), Ptr{Void},
                     (Ptr{Uint8}, Int32, Ptr{SF_INFO}),
@@ -30,24 +36,28 @@ function openAudio(path::String)
         error(bytestring(errmsg))
     end
 
-    return Sndfile(filePtr, sfinfo)
+    return AudioFile(filePtr, sfinfo)
 end
 
-function closeAudio(file::Sndfile)
+function Base.close(file::AudioFile)
     err = ccall((:sf_close, sndfile), Int32, (Ptr{Void},), file.filePtr)
     if err != 0
         error("Failed to close file")
     end
 end
 
-function openAudio(f::Function, path::String)
-    file = openAudio(path)
+function af_open(f::Function, path::String)
+    file = af_open(path)
     f(file)
-    closeAudio(file)
+    close(file)
 end
 
-function readFrames(file::Sndfile, nframes::Integer, dtype::Type = Int16)
+# TODO: we should implement a general read(node::AudioNode) that pulls data
+# through an arbitrary render chain and returns the result as a vector
+function Base.read(file::AudioFile, nframes::Integer = file.sfinfo.frames,
+                   dtype::Type = Int16)
     arr = []
+    @assert file.sfinfo.channels <= 2
     if file.sfinfo.channels == 2
         arr = zeros(dtype, 2, nframes)
     else
@@ -79,24 +89,29 @@ function readFrames(file::Sndfile, nframes::Integer, dtype::Type = Int16)
     return arr
 end
 
-type FileInput <: AudioNode
+type FilePlayer <: AudioNode
     active::Bool
-    file::Sndfile
+    file::AudioFile
 
-    function FileInput(path::String)
-        node = new(false, openAudio(path))
-        finalizer(node, node -> closeAudio(node.file))
+    function FilePlayer(file::AudioFile)
+        node = new(false, file)
+        finalizer(node, node -> close(node.file))
         return node
+    end
+
+    function FilePlayer(path::String)
+        return FilePlayer(af_open(path))
     end
 end
 
-function render(node::FileInput, device_input::AudioBuf, info::DeviceInfo)
+function render(node::FilePlayer, device_input::AudioBuf, info::DeviceInfo)
     @assert node.file.sfinfo.samplerate == info.sample_rate
 
-    audio = readFrames(node.file, info.buf_size, AudioSample)
+    audio = read(node.file, info.buf_size, AudioSample)
 
     if audio == Nothing
-        return zeros(AudioSample, info.buf_size), false
+        node.active = false
+        return zeros(AudioSample, info.buf_size), node.active
     end
 
     # if the file is stereo, mix the two channels together
@@ -105,4 +120,14 @@ function render(node::FileInput, device_input::AudioBuf, info::DeviceInfo)
     end
 
     return audio, node.active
+end
+
+function play(filename::String, args...)
+    player = FilePlayer(filename)
+    play(player, args...)
+end
+
+function play(file::AudioFile, args...)
+    player = FilePlayer(file)
+    play(player, args...)
 end
