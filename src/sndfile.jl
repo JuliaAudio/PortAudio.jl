@@ -42,6 +42,8 @@ end
 function af_open(path::String, mode::String = "r",
             sampleRate::Integer = 44100, channels::Integer = 1,
             format::Integer = 0)
+    @assert channels <= 2
+
     sfinfo = SF_INFO(0, 0, 0, 0, 0, 0)
     file_mode = SFM_READ
 
@@ -120,6 +122,7 @@ function Base.read(file::AudioFile, nframes::Integer = file.sfinfo.frames,
 end
 
 function Base.write{T}(file::AudioFile, frames::Array{T})
+    @assert file.sfinfo.channels <= 2
     nframes = int(length(frames) / file.sfinfo.channels)
 
     if T == Int16
