@@ -83,5 +83,5 @@ reference = int16((2 ^ 15 - 1) * sin(phase))
 f = af_open("test/sinwave.flac")
 @test f.sfinfo.channels == 1
 @test f.sfinfo.frames == 2 * samplerate
-actual = readFrames(f, 2 * samplerate)
+actual = read(f, 2 * samplerate)
 @test_approx_eq(reference, actual)
