@@ -80,7 +80,7 @@ t = linspace(0, 2, 2 * samplerate)
 phase = 2 * pi * freq * t
 reference = int16((2 ^ 15 - 1) * sin(phase))
 
-f = openAudio("test/sinwave.flac")
+f = af_open("test/sinwave.flac")
 @test f.sfinfo.channels == 1
 @test f.sfinfo.frames == 2 * samplerate
 actual = readFrames(f, 2 * samplerate)
