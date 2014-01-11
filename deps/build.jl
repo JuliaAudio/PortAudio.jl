@@ -5,9 +5,11 @@ using BinDeps
 ENV["JULIA_ROOT"] = abspath(JULIA_HOME, "../../")
 
 libportaudio = library_dependency("libportaudio")
+libsndfile = library_dependency("libsndfile")
 
 # TODO: add other providers with correct names
 provides(AptGet, {"portaudio19-dev" => libportaudio})
+provides(AptGet, {"libsndfile1-dev" => libsndfile})
 
 @osx_only begin
     if Pkg.installed("Homebrew") === nothing
@@ -15,9 +17,11 @@ provides(AptGet, {"portaudio19-dev" => libportaudio})
     end
     using Homebrew
     provides(Homebrew.HB, {"portaudio" => libportaudio})
+    provides(Homebrew.HB, {"sndfile" => libsndfile})
 end
 
-@BinDeps.install [:libportaudio => :libportaudio]
+@BinDeps.install [:libportaudio => :libportaudio,
+                  :libsndfile => :libsndfile]
 
 cd(joinpath(Pkg.dir(), "AudioIO", "deps", "src") )
 run(`make`)
