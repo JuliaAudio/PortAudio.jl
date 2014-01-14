@@ -6,11 +6,12 @@ export SinOsc, AudioMixer, ArrayPlayer, AudioInput
 
 type SinOsc <: AudioNode
     active::Bool
+    deactivate_cond::Condition
     freq::Real
     phase::FloatingPoint
 
     function SinOsc(freq::Real)
-        new(false, freq, 0.0)
+        new(false, Condition(), freq, 0.0)
     end
 end
 
@@ -18,7 +19,7 @@ function render(node::SinOsc, device_input::AudioBuf, info::DeviceInfo)
     phase = AudioSample[1:info.buf_size] * 2pi * node.freq / info.sample_rate
     phase += node.phase
     node.phase = phase[end]
-    return sin(phase), node.active
+    return sin(phase), is_active(node)
 end
 
 #### AudioMixer ####
@@ -31,6 +32,7 @@ const MAX_MIXER_INPUTS = 32
 
 type AudioMixer <: AudioNode
     active::Bool
+    deactivate_cond::Condition
     mix_inputs::Array{MaybeAudioNode}
 
     function AudioMixer{T <: AudioNode}(mix_inputs::Array{T})
@@ -39,7 +41,7 @@ type AudioMixer <: AudioNode
         for (i, node) in enumerate(mix_inputs)
             input_array[i] = node
         end
-        new(false, input_array)
+        new(false, Condition(), input_array)
     end
 
     function AudioMixer()
@@ -87,7 +89,7 @@ function render(node::AudioMixer, device_input::AudioBuf, info::DeviceInfo)
             end
         end
     end
-    return mix_buffer, node.active
+    return mix_buffer, is_active(node)
 end
 
 #### Array Player ####
@@ -96,11 +98,12 @@ end
 
 type ArrayPlayer <: AudioNode
     active::Bool
+    deactivate_cond::Condition
     arr::AudioBuf
     arr_index::Int
 
     function ArrayPlayer(arr::AudioBuf)
-        new(false, arr, 1)
+        new(false, Condition(), arr, 1)
     end
 end
 
@@ -111,13 +114,12 @@ function render(node::ArrayPlayer, device_input::AudioBuf, info::DeviceInfo)
     range_end = min(i + info.buf_size-1, length(node.arr))
     output = node.arr[i:range_end]
     if length(output) < info.buf_size
-        # we're finished with the array, pad with zeros and clear our active
-        # flag
+        # we're finished with the array, pad with zeros and deactivate
         output = vcat(output, zeros(AudioSample, info.buf_size - length(output)))
-        node.active = false
+        deactivate(node)
     end
     node.arr_index = range_end + 1
-    return output, node.active
+    return output, is_active(node)
 end
 
 #### AudioInput ####
@@ -126,14 +128,15 @@ end
 
 type AudioInput <: AudioNode
     active::Bool
+    deactivate_cond::Condition
     channel::Int
 
     function AudioInput(channel::Int)
-        new(false, channel)
+        new(false, Condition(), channel)
     end
 end
 
 function render(node::AudioInput, device_input::AudioBuf, info::DeviceInfo)
     @assert size(device_input, 1) == info.buf_size
-    return device_input[:, node.channel], node.active
+    return device_input[:, node.channel], is_active(node)
 end

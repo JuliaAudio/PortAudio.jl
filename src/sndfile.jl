@@ -91,10 +91,11 @@ end
 
 type FilePlayer <: AudioNode
     active::Bool
+    deactivate_cond::Condition
     file::AudioFile
 
     function FilePlayer(file::AudioFile)
-        node = new(false, file)
+        node = new(false, Condition(), file)
         finalizer(node, node -> close(node.file))
         return node
     end
@@ -110,16 +111,16 @@ function render(node::FilePlayer, device_input::AudioBuf, info::DeviceInfo)
     audio = read(node.file, info.buf_size, AudioSample)
 
     if audio == Nothing
-        node.active = false
-        return zeros(AudioSample, info.buf_size), node.active
+        deactivate(node)
+        return zeros(AudioSample, info.buf_size), is_active(node)
     end
 
     # if the file is stereo, mix the two channels together
     if node.file.sfinfo.channels == 2
-        return (audio[1, :] / 2) + (audio[2, :] / 2), node.active
+        return (audio[1, :] / 2) + (audio[2, :] / 2), is_active(node)
     end
 
-    return audio, node.active
+    return audio, is_active(node)
 end
 
 function play(filename::String, args...)

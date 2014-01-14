@@ -33,7 +33,7 @@ include("sndfile.jl")
 
 # Play an AudioNode by adding it as an input to the root mixer node
 function play(node::AudioNode, stream::AudioStream)
-    node.active = true
+    activate(node)
     add_input(stream.mixer, node)
     return node
 end
@@ -76,8 +76,27 @@ function play{T <: Unsigned}(arr::Array{T}, args...)
 end
 
 function stop(node::AudioNode)
+    deactivate(node)
+    node
+end
+
+function activate(node::AudioNode)
+    node.active = true
+end
+
+function deactivate(node::AudioNode)
     node.active = false
-    return node
+    notify(node.deactivate_cond)
+end
+
+function is_active(node::AudioNode)
+    node.active
+end
+
+function Base.wait(node::AudioNode)
+    if is_active(node)
+        wait(node.deactivate_cond)
+    end
 end
 
 end # module AudioIO
