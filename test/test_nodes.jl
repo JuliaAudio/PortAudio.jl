@@ -7,9 +7,10 @@ dev_input = zeros(AudioIO.AudioSample, test_info.buf_size)
 # A TestNode just renders out 1:buf_size each frame
 type TestNode <: AudioIO.AudioNode
     active::Bool
+    deactivate_cond::Condition
 
     function TestNode()
-        return new(false)
+        return new(false, Condition())
     end
 end
 
