@@ -104,3 +104,41 @@ Wir be- tre- ten feu- er- trun- ken, Himm- li- sche, dein Hei- - lig- thum!
 Dei- ne Zau- ber bin den - wie- der, was die - Mo- de streng ge- theilt,
 al- le mensch- en wer- den Brü- der wo dein sanf- ter Flü- - gel weilt.
 """)
+
+# And now with harmony!
+
+soprano = @async parsevoice("""
+f'#. f'#. g'. a'. a'. g'. f'#. e'~ e'8 d.'4 d.' e.' f#'. f#'.~ f#' e'8 e'4~ e'2
+""", lyrics="Freu- de, schö- ner Göt- ter- fun- ken, Toch- ter aus E- li- - si- um!"
+)
+alto = @async parsevoice("""
+a. a. a. a.  a.  a. a. a~ g8 f#.4 a.  a.  a. a.~ a a8 a4~ a2
+""")
+tenor = @async parsevoice("""
+d. d. e. f#. f#. e. d. d~ e8 f#.4 f#. a,. d. d.~ d c#8 c#4 c#2
+""")
+bass = @async parsevoice("""
+d. d. d. d. a,. a,. a,. b,~ c8 d. a., a., a., a., a, a8, a,4 a,2
+""")
+wait(soprano)
+wait(alto)
+wait(tenor)
+wait(bass)
+
+soprano = @async parsevoice("""
+f'#.4 f'#. g'. a'. a'. g'. f'#. e'. d'. d'. e'. f'#. e'.~ e' d'8 d'4~ d'2
+""", lyrics="Wir be- tre- ten feu- er- trun- ken, Himm- li- sche, dein Hei- - lig- thum!")
+alto = @async parsevoice("""
+a.4 a. b. c'. c'. b. a. g. f#. f#. g. f#. g.~ g4 f#8 f#~ f#2 
+""")
+tenor = @async parsevoice("""
+d.4 d. d. d. d. d. d. d. d. d. c#. d. c#.~ c# d8 d d2  
+""")
+bass = @async parsevoice("""
+d.4 d. d. d. a,. a,. a,. a., a., a., a., a., a.,~ a, a,8 d, d,2
+""")
+
+wait(soprano)
+wait(alto)
+wait(tenor)
+wait(bass)
