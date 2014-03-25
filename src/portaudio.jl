@@ -36,12 +36,9 @@ end
 
 ############ Internal Functions ############
 
-function wake_callback_thread(out_array)
-    ccall((:wake_callback_thread, libportaudio_shim), Void,
-          (Ptr{Void}, Cuint),
-          out_array, size(out_array, 1))
+function synchronize_buffer(buffer)
+    ccall((:synchronize_buffer, libportaudio_shim), Void, (Ptr{Void},), buffer)
 end
-
 
 function init_portaudio()
     info("Initializing PortAudio. Expect errors as we scan devices")
@@ -83,17 +80,17 @@ end
 
 function portaudio_task(jl_filedesc::Integer, stream::PortAudioStream)
     info("Audio Task Launched")
-    in_array = zeros(AudioSample, stream.info.buf_size)
+    buffer = zeros(AudioSample, stream.info.buf_size)
     desc_bytes = Cchar[0]
     jl_stream = fdio(jl_filedesc)
     jl_rawfd = RawFD(jl_filedesc)
     try
         while true
             # assume the root mixer is always active
-            out_array::AudioBuf, _::Bool = render(stream.mixer, in_array,
-                                                  stream.info)
+            buffer::AudioBuf, _::Bool = render(stream.mixer, buffer, stream.info)
+
             # wake the C code so it knows we've given it some more data
-            wake_callback_thread(out_array)
+            synchronize_buffer(buffer)
             # wait for new data to be available from the sound card (and for it
             # to have processed our last frame of data). At some point we
             # should do something with the data we get from the callback

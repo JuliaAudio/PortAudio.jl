@@ -4,18 +4,16 @@
 #include <unistd.h>
 
 static int paCallback(const void *inputBuffer, void *outputBuffer,
-                          unsigned long framesPerBuffer,
-                          const PaStreamCallbackTimeInfo* timeInfo,
-                          PaStreamCallbackFlags statusFlags,
-                          void *userData);
+                      unsigned long framesPerBuffer,
+                      const PaStreamCallbackTimeInfo* timeInfo,
+                      PaStreamCallbackFlags statusFlags,
+                      void *userData);
 
 static PaStream *AudioStream;
 static int JuliaPipeReadFD = 0;
 static int JuliaPipeWriteFD = 0;
 static sem_t CSemaphore;
-static void *OutData = NULL;
-static unsigned long OutFrames = 0;
-
+static void *Buffer = NULL;
 
 int make_pipe(void)
 {
@@ -27,11 +25,9 @@ int make_pipe(void)
     return JuliaPipeReadFD;
 }
 
-
-void wake_callback_thread(void *outData, unsigned int outFrames)
+void synchronize_buffer(void *buffer)
 {
-    OutData = outData;
-    OutFrames = outFrames;
+    Buffer = buffer;
     sem_post(&CSemaphore);
 }
 
@@ -39,13 +35,12 @@ PaError open_stream(unsigned int sampleRate, unsigned int bufSize)
 {
     PaError err;
 
-
     err = Pa_OpenDefaultStream(&AudioStream,
-            0,          /* no input channels */
+            1,          /* single input channel */
             1,          /* mono output */
             paFloat32,  /* 32 bit floating point output */
             sampleRate,
-            bufSize,        /* frames per buffer, i.e. the number of sample frames
+            bufSize,    /* frames per buffer, i.e. the number of sample frames
                            that PortAudio will request from the callback. Many
                            apps may want to use paFramesPerBufferUnspecified,
                            which tells PortAudio to pick the best, possibly
@@ -66,7 +61,6 @@ PaError open_stream(unsigned int sampleRate, unsigned int bufSize)
     return paNoError;
 }
 
-
 //PaError stop_sin(void)
 //{
 //    PaError err;
@@ -84,17 +78,16 @@ PaError open_stream(unsigned int sampleRate, unsigned int bufSize)
 //    return paNoError;
 //}
 
-
 /*
  * This routine will be called by the PortAudio engine when audio is needed.
  * It may called at interrupt level on some machines so don't do anything that
  * could mess up the system like calling malloc() or free().
  */
 static int paCallback(const void *inputBuffer, void *outputBuffer,
-                           unsigned long framesPerBuffer,
-                           const PaStreamCallbackTimeInfo* timeInfo,
-                           PaStreamCallbackFlags statusFlags,
-                           void *userData)
+                      unsigned long framesPerBuffer,
+                      const PaStreamCallbackTimeInfo* timeInfo,
+                      PaStreamCallbackFlags statusFlags,
+                      void *userData)
 {
     unsigned int i;
     unsigned char fd_data = 0;
@@ -102,9 +95,9 @@ static int paCallback(const void *inputBuffer, void *outputBuffer,
     sem_wait(&CSemaphore);
     for(i=0; i<framesPerBuffer; i++)
     {
-        ((float *)outputBuffer)[i] = ((float *)OutData)[i];
+        ((float *)outputBuffer)[i] = ((float *)Buffer)[i];
+        ((float *)Buffer)[i] = ((float *)inputBuffer)[i];
     }
-    // TODO: copy the input data somewhere
     write(JuliaPipeWriteFD, &fd_data, 1);
     return 0;
 }
