@@ -1,7 +1,7 @@
 module AudioIO
 
 # export the basic API
-export play, stop
+export play, stop, get_audio_devices
 
 # default stream used when none is given
 _stream = nothing
@@ -47,34 +47,6 @@ function play(node::AudioNode)
     play(node, _stream)
 end
 
-# Allow users to play a raw array by wrapping it in an ArrayPlayer
-function play(arr::AudioBuf, args...)
-    player = ArrayPlayer(arr)
-    play(player, args...)
-end
-
-# If the array is the wrong floating type, convert it
-function play{T <: FloatingPoint}(arr::Array{T}, args...)
-    arr = convert(AudioBuf, arr)
-    play(arr, args...)
-end
-
-# If the array is an integer type, scale to [-1, 1] floating point
-
-# integer audio can be slightly (by 1) more negative than positive,
-# so we just scale so that +/- typemax(T) becomes +/- 1
-function play{T <: Signed}(arr::Array{T}, args...)
-    arr = arr / typemax(T)
-    play(arr, args...)
-end
-
-function play{T <: Unsigned}(arr::Array{T}, args...)
-    zero = (typemax(T) + 1) / 2
-    range = floor(typemax(T) / 2)
-    arr = (arr - zero) / range
-    play(arr, args...)
-end
-
 function stop(node::AudioNode)
     deactivate(node)
     node
@@ -97,6 +69,10 @@ function Base.wait(node::AudioNode)
     if is_active(node)
         wait(node.deactivate_cond)
     end
+end
+
+function get_audio_devices()
+    return get_portaudio_devices()
 end
 
 end # module AudioIO

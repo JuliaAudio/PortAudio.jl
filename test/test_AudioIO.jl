@@ -73,25 +73,27 @@ stop(node)
 process(test_stream)
 @test process(test_stream) == zeros(AudioIO.AudioSample, TEST_BUF_SIZE)
 
-for ext in ["wav", "flac"]
-    info("Testing $ext file write/read")
+info("Testing wav file write/read")
 
-    fname = "test/sinwave.$ext"
+fname = "test/sinwave.wav"
 
-    samplerate = 44100
-    freq = 440
-    t = [0 : 2 * samplerate - 1] / samplerate
-    phase = 2 * pi * freq * t
-    reference = int16((2 ^ 15 - 1) * sin(phase))
+samplerate = 44100
+freq = 440
+t = [0 : 2 * samplerate - 1] / samplerate
+phase = 2 * pi * freq * t
+reference = int16((2 ^ 15 - 1) * sin(phase))
 
-    af_open(fname, "w") do f
-        write(f, reference)
-    end
-
-    af_open(fname) do f
-        @test f.sfinfo.channels == 1
-        @test f.sfinfo.frames == 2 * samplerate
-        actual = read(f, 2 * samplerate)
-        @test_approx_eq(reference, actual)
-    end
+af_open(fname, "w") do f
+    write(f, reference)
 end
+
+af_open(fname) do f
+    @test f.sfinfo.channels == 1
+    @test f.sfinfo.frames == 2 * samplerate
+    actual = read(f, 2 * samplerate)
+    @test_approx_eq(reference, actual)
+end
+
+info("Testing Audio Device Listing...")
+d_list = get_audio_devices()
+@test length(d_list) > 0

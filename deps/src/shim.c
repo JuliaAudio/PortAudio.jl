@@ -3,11 +3,11 @@
 #include <stdio.h>
 #include <unistd.h>
 
-static int paCallback(const void *inputBuffer, void *outputBuffer,
-                      unsigned long framesPerBuffer,
-                      const PaStreamCallbackTimeInfo* timeInfo,
-                      PaStreamCallbackFlags statusFlags,
-                      void *userData);
+int paCallback(const void *inputBuffer, void *outputBuffer,
+               unsigned long framesPerBuffer,
+               const PaStreamCallbackTimeInfo* timeInfo,
+               PaStreamCallbackFlags statusFlags,
+               void *userData);
 
 static PaStream *AudioStream;
 static int JuliaPipeReadFD = 0;
@@ -61,33 +61,16 @@ PaError open_stream(unsigned int sampleRate, unsigned int bufSize)
     return paNoError;
 }
 
-//PaError stop_sin(void)
-//{
-//    PaError err;
-//    err = Pa_StopStream(sin_stream);
-//    if(err != paNoError)
-//    {
-//        return err;
-//    }
-//
-//    err = Pa_CloseStream(sin_stream);
-//    if( err != paNoError )
-//    {
-//        return err;
-//    }
-//    return paNoError;
-//}
-
 /*
  * This routine will be called by the PortAudio engine when audio is needed.
  * It may called at interrupt level on some machines so don't do anything that
  * could mess up the system like calling malloc() or free().
  */
-static int paCallback(const void *inputBuffer, void *outputBuffer,
-                      unsigned long framesPerBuffer,
-                      const PaStreamCallbackTimeInfo* timeInfo,
-                      PaStreamCallbackFlags statusFlags,
-                      void *userData)
+int paCallback(const void *inputBuffer, void *outputBuffer,
+               unsigned long framesPerBuffer,
+               const PaStreamCallbackTimeInfo* timeInfo,
+               PaStreamCallbackFlags statusFlags,
+               void *userData)
 {
     unsigned int i;
     unsigned char fd_data = 0;

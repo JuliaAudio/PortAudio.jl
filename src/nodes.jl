@@ -17,7 +17,7 @@ end
 
 function render(node::SinOsc, device_input::AudioBuf, info::DeviceInfo)
     phase = AudioSample[1:info.buf_size] * 2pi * node.freq / info.sample_rate
-    phase += node.phase
+    phase .+= node.phase
     node.phase = phase[end]
     return sin(phase), is_active(node)
 end
@@ -120,6 +120,34 @@ function render(node::ArrayPlayer, device_input::AudioBuf, info::DeviceInfo)
     end
     node.arr_index = range_end + 1
     return output, is_active(node)
+end
+
+# Allow users to play a raw array by wrapping it in an ArrayPlayer
+function play(arr::AudioBuf, args...)
+    player = ArrayPlayer(arr)
+    play(player, args...)
+end
+
+# If the array is the wrong floating type, convert it
+function play{T <: FloatingPoint}(arr::Array{T}, args...)
+    arr = convert(AudioBuf, arr)
+    play(arr, args...)
+end
+
+# If the array is an integer type, scale to [-1, 1] floating point
+
+# integer audio can be slightly (by 1) more negative than positive,
+# so we just scale so that +/- typemax(T) becomes +/- 1
+function play{T <: Signed}(arr::Array{T}, args...)
+    arr = arr / typemax(T)
+    play(arr, args...)
+end
+
+function play{T <: Unsigned}(arr::Array{T}, args...)
+    zero = (typemax(T) + 1) / 2
+    range = floor(typemax(T) / 2)
+    arr = (arr .- zero) / range
+    play(arr, args...)
 end
 
 #### AudioInput ####
