@@ -19,6 +19,10 @@ abstract AudioNode
 # All AudioStream subtypes should have a mixer and info field
 abstract AudioStream
 
+# An audio interface is usually a physical sound card, but could
+# be anything you'd want to connect a stream to
+abstract AudioInterface
+
 # Info about the hardware device
 type DeviceInfo
     sample_rate::Integer
@@ -28,6 +32,7 @@ end
 include("nodes.jl")
 include("portaudio.jl")
 include("sndfile.jl")
+include("operators.jl")
 
 ############ Exported Functions #############
 

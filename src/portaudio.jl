@@ -135,7 +135,7 @@ type PaHostApiInfo
     defaultOutputDevice::PaDeviceIndex
 end
 
-type AudioDevice
+type PortAudioInterface <: AudioInterface
     name::String
     host_api::String
     max_input_channels::Int
@@ -152,10 +152,10 @@ function get_portaudio_devices()
     init_portaudio()
     device_count = ccall((:Pa_GetDeviceCount, "libportaudio"), PaDeviceIndex, ())
     pa_devices = [get_device_info(i) for i in 0:(device_count - 1)]
-    [AudioDevice(bytestring(d.name),
-                 bytestring(get_host_api_info(d.host_api).name),
-                 d.max_input_channels,
-                 d.max_output_channels)
+    [PortAudioInterface(bytestring(d.name),
+                        bytestring(get_host_api_info(d.host_api).name),
+                        d.max_input_channels,
+                        d.max_output_channels)
      for d in pa_devices]
 end
 

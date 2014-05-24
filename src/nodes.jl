@@ -1,9 +1,8 @@
-export SinOsc, AudioMixer, ArrayPlayer, AudioInput
-
 #### SinOsc ####
 
 # Generates a sin tone at the given frequency
 
+export SinOsc
 type SinOsc <: AudioNode
     active::Bool
     deactivate_cond::Condition
@@ -22,6 +21,26 @@ function render(node::SinOsc, device_input::AudioBuf, info::DeviceInfo)
     return sin(phase), is_active(node)
 end
 
+#### Gain ####
+export Gain
+type Gain <: AudioNode
+    active::Bool
+    deactivate_cond::Condition
+    in_node::AudioNode
+    gain::Float32
+
+    function Gain(in_node::AudioNode, gain::Real)
+        new(false, Condition(), in_node, gain)
+    end
+end
+
+function render(node::Gain, device_input::AudioBuf, info::DeviceInfo)
+    input, child_active = render(node.in_node, device_input, info)
+    # TODO: should we check the active flag of the input?
+    return input .* node.gain, is_active(node)
+end
+
+
 #### AudioMixer ####
 
 # Mixes a set of inputs equally
@@ -30,6 +49,7 @@ end
 typealias MaybeAudioNode Union(AudioNode, Nothing)
 const MAX_MIXER_INPUTS = 32
 
+export AudioMixer
 type AudioMixer <: AudioNode
     active::Bool
     deactivate_cond::Condition
@@ -96,6 +116,7 @@ end
 
 # Plays a AudioBuf by rendering it out piece-by-piece
 
+export ArrayPlayer
 type ArrayPlayer <: AudioNode
     active::Bool
     deactivate_cond::Condition
@@ -154,6 +175,7 @@ end
 
 # Renders incoming audio input from the hardware
 
+export AudioInput
 type AudioInput <: AudioNode
     active::Bool
     deactivate_cond::Condition
