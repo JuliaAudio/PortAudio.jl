@@ -56,13 +56,14 @@ render_output = render(mix, dev_input, test_info)
 
 info("Testing SinOSC...")
 freq = 440
-t = linspace(0,
-             (test_info.buf_size-1) / test_info.sample_rate,
-             test_info.buf_size)
+# note that this range includes the end, which is why there are sample_rate+1 samples
+t = linspace(0, 1, test_info.sample_rate+1)
 test_vect = convert(AudioBuf, sin(2pi * t * freq))
 osc = SinOsc(freq)
 render_output = render(osc, dev_input, test_info)
-@test_approx_eq(render_output, test_vect)
+@test render_output == test_vect[1:test_info.buf_size]
+render_output = render(osc, dev_input, test_info)
+@test render_output == test_vect[test_info.buf_size+1:2*test_info.buf_size]
 stop(osc)
 render_output = render(osc, dev_input, test_info)
 @test render_output == AudioSample[]

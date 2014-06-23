@@ -29,10 +29,15 @@ SinOsc() = SinOsc(440)
 export SinOsc
 
 function render(node::SinOscRenderer, device_input::AudioBuf, info::DeviceInfo)
-    phase = AudioSample[0:(info.buf_size-1)] * 2pi * node.freq / info.sample_rate
-    phase .+= node.phase
-    node.phase = phase[end] + 2pi * node.freq / info.sample_rate
-    return sin(phase)
+    outbuf = Array(AudioSample, info.buf_size)
+    phase = node.phase
+    dt = 1/info.sample_rate
+    for i in 1:info.buf_size
+        outbuf[i] = sin(2pi*node.freq*phase)
+        phase += dt
+    end
+    node.phase = phase
+    return outbuf
 end
 
 #### AudioMixer ####
