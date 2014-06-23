@@ -150,22 +150,19 @@ function play{T <: Unsigned}(arr::Array{T}, args...)
     play(arr, args...)
 end
 
-##### AudioInput ####
-#
-## Renders incoming audio input from the hardware
-#
-#export AudioInput
-#type AudioInput <: AudioNode
-#    active::Bool
-#    deactivate_cond::Condition
-#    channel::Int
-#
-#    function AudioInput(channel::Int)
-#        new(false, Condition(), channel)
-#    end
-#end
-#
-#function render(node::AudioInput, device_input::AudioBuf, info::DeviceInfo)
-#    @assert size(device_input, 1) == info.buf_size
-#    return device_input[:, node.channel], is_active(node)
-#end
+#### AudioInput ####
+
+# Renders incoming audio input from the hardware
+
+type InputRenderer <: AudioRenderer
+    channel::Int
+end
+
+function render(node::InputRenderer, device_input::AudioBuf, info::DeviceInfo)
+    @assert size(device_input, 1) == info.buf_size
+    return device_input[:, node.channel]
+end
+
+typealias AudioInput AudioNode{InputRenderer}
+AudioInput(channel::Int) = AudioInput(InputRenderer(channel))
+export AudioInput
