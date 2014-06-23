@@ -84,7 +84,6 @@ function handle_status(err::PaError)
 end
 
 function portaudio_task(jl_filedesc::Integer, stream::PortAudioStream)
-    info("Audio Task Launched")
     buffer = zeros(AudioSample, stream.info.buf_size)
     desc_bytes = Cchar[0]
     jl_stream = fdio(jl_filedesc)
@@ -92,7 +91,7 @@ function portaudio_task(jl_filedesc::Integer, stream::PortAudioStream)
     try
         while true
             # assume the root is always active
-            rendered = render(stream.root, buffer, stream.info)
+            rendered = render(stream.root.renderer, buffer, stream.info)
             for i in 1:length(rendered)
                 buffer[i] = rendered[i]
             end
