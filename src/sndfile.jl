@@ -88,7 +88,6 @@ end
 # through an arbitrary render chain and returns the result as a vector
 function Base.read(file::AudioFile, nframes::Integer = file.sfinfo.frames,
                    dtype::Type = Int16)
-    arr = []
     @assert file.sfinfo.channels <= 2
     if file.sfinfo.channels == 2
         arr = zeros(dtype, 2, nframes)
@@ -114,11 +113,7 @@ function Base.read(file::AudioFile, nframes::Integer = file.sfinfo.frames,
                         file.filePtr, arr, nframes)
     end
 
-    if nread == 0
-        return Nothing
-    end
-
-    return arr
+    return arr[1:nread]
 end
 
 function Base.write{T}(file::AudioFile, frames::Array{T})
@@ -144,38 +139,34 @@ function Base.write{T}(file::AudioFile, frames::Array{T})
     end
 end
 
-type FilePlayer <: AudioNode
-    active::Bool
-    deactivate_cond::Condition
+type FileRenderer <: AudioRenderer
     file::AudioFile
 
-    function FilePlayer(file::AudioFile)
-        node = new(false, Condition(), file)
+    function FileRenderer(file::AudioFile)
         finalizer(node, node -> close(node.file))
         return node
     end
-
-    function FilePlayer(path::String)
-        return FilePlayer(af_open(path))
-    end
 end
 
-function render(node::FilePlayer, device_input::AudioBuf, info::DeviceInfo)
+typealias FilePlayer AudioNode{FileRenderer}
+FilePlayer(file::AudioFile) = FilePlayer(FileRenderer(file))
+FilePlayer(path::String) = FilePlayer(af_open(path))
+
+function render(node::FileRenderer, device_input::AudioBuf, info::DeviceInfo)
     @assert node.file.sfinfo.samplerate == info.sample_rate
 
     audio = read(node.file, info.buf_size, AudioSample)
 
     if audio == Nothing
-        deactivate(node)
-        return zeros(AudioSample, info.buf_size), is_active(node)
+        return AudioSample[]
     end
 
     # if the file is stereo, mix the two channels together
     if node.file.sfinfo.channels == 2
-        return (audio[1, :] / 2) + (audio[2, :] / 2), is_active(node)
+        return (audio[1, :] / 2) + (audio[2, :] / 2)
     end
 
-    return audio, is_active(node)
+    return audio
 end
 
 function play(filename::String, args...)

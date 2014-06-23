@@ -5,20 +5,22 @@ const TEST_SAMPLERATE = 44100
 const TEST_BUF_SIZE = 1024
 
 type TestAudioStream <: AudioIO.AudioStream
-    mixer::AudioMixer
+    root::AudioIO.AudioMixer
     info::AudioIO.DeviceInfo
 
     function TestAudioStream()
-        mixer = AudioMixer()
-        new(mixer, AudioIO.DeviceInfo(TEST_SAMPLERATE, TEST_BUF_SIZE))
+        root = AudioMixer()
+        new(root, AudioIO.DeviceInfo(TEST_SAMPLERATE, TEST_BUF_SIZE))
     end
 end
 
 # render the stream and return the next block of audio. This is used in testing
 # to simulate the audio callback that's normally called by the device.
 function process(stream::TestAudioStream)
+    out_array = zeros(AudioIO.AudioSample, stream.info.buf_size)
     in_array = zeros(AudioIO.AudioSample, stream.info.buf_size)
-    out_array, _ = AudioIO.render(stream.mixer, in_array, stream.info)
+    rendered = AudioIO.render(stream.root, in_array, stream.info)
+    out_array[1:length(rendered)] = rendered
     return out_array
 end
 
@@ -59,18 +61,12 @@ player = play(ui8, test_stream)
 @test_approx_eq(process(test_stream)[1:255],
                    convert(AudioIO.AudioBuf, linspace(-1.0, 1.0, 255)))
 
-
 info("Testing AudioNode Stopping...")
 test_stream = TestAudioStream()
 node = SinOsc(440)
-@test !node.active
 play(node, test_stream)
-@test node.active
 process(test_stream)
 stop(node)
-@test !node.active
-# give the render task a chance to clean up
-process(test_stream)
 @test process(test_stream) == zeros(AudioIO.AudioSample, TEST_BUF_SIZE)
 
 info("Testing wav file write/read")

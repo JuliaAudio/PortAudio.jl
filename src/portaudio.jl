@@ -35,13 +35,13 @@ portaudio_inited = false
 ################## Types ####################
 
 type PortAudioStream <: AudioStream
-    mixer::AudioMixer
+    root::AudioMixer
     info::DeviceInfo
 
     function PortAudioStream(sample_rate::Int=44100, buf_size::Int=1024)
         init_portaudio()
-        mixer = AudioMixer()
-        stream = new(mixer, DeviceInfo(sample_rate, buf_size))
+        root = AudioMixer()
+        stream = new(root, DeviceInfo(sample_rate, buf_size))
         # we need to start up the stream with the portaudio library
         open_portaudio_stream(stream)
         return stream
@@ -91,8 +91,14 @@ function portaudio_task(jl_filedesc::Integer, stream::PortAudioStream)
     jl_rawfd = RawFD(jl_filedesc)
     try
         while true
-            # assume the root mixer is always active
-            buffer::AudioBuf, _::Bool = render(stream.mixer, buffer, stream.info)
+            # assume the root is always active
+            rendered = render(stream.root, buffer, stream.info)
+            for i in 1:length(rendered)
+                buffer[i] = rendered[i]
+            end
+            for i in (length(rendered)+1):length(buffer)
+                buffer[i] = 0.0
+            end
 
             # wake the C code so it knows we've given it some more data
             synchronize_buffer(buffer)

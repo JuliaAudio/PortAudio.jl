@@ -12,11 +12,12 @@ typealias AudioSample Float32
 # A frame of audio, possibly multi-channel
 typealias AudioBuf Array{AudioSample}
 
-# A node in the render tree
-abstract AudioNode
+# used as a type parameter for AudioNodes. Subtypes handle the actual DSP for
+# each node
+abstract AudioRenderer
 
-# A stream of audio (for instance that writes to hardware)
-# All AudioStream subtypes should have a mixer and info field
+# A stream of audio (for instance that writes to hardware). All AudioStream
+# subtypes should have a mixer and info field
 abstract AudioStream
 
 # An audio interface is usually a physical sound card, but could
@@ -29,6 +30,31 @@ type DeviceInfo
     buf_size::Integer
 end
 
+type AudioNode{T<:AudioRenderer}
+    active::Bool
+    end_cond::Condition
+    renderer::T
+
+    function AudioNode(renderer::AudioRenderer)
+        new(true, Condition(), renderer)
+    end
+end
+
+function render(node::AudioNode, input::AudioBuf, info::DeviceInfo)
+    # TODO: not sure if the compiler will infer that render() always returns an
+    # AudioBuf. Might need to help it
+    if node.active
+        result = render(node.renderer, input, info)
+        if length(result) < info.buf_size
+            node.active = false
+            notify(node.end_cond)
+        end
+        return result
+    else
+        return AudioSample[]
+    end
+end
+
 include("nodes.jl")
 include("portaudio.jl")
 include("sndfile.jl")
@@ -38,8 +64,7 @@ include("operators.jl")
 
 # Play an AudioNode by adding it as an input to the root mixer node
 function play(node::AudioNode, stream::AudioStream)
-    activate(node)
-    add_input(stream.mixer, node)
+    push!(stream.root, node)
     return node
 end
 
@@ -53,26 +78,13 @@ function play(node::AudioNode)
 end
 
 function stop(node::AudioNode)
-    deactivate(node)
-    node
-end
-
-function activate(node::AudioNode)
-    node.active = true
-end
-
-function deactivate(node::AudioNode)
     node.active = false
-    notify(node.deactivate_cond)
-end
-
-function is_active(node::AudioNode)
-    node.active
+    notify(node.end_cond)
 end
 
 function Base.wait(node::AudioNode)
-    if is_active(node)
-        wait(node.deactivate_cond)
+    if node.active
+        wait(node.end_cond)
     end
 end
 
