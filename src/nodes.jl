@@ -150,6 +150,18 @@ function play{T <: Unsigned}(arr::Array{T}, args...)
     play(arr, args...)
 end
 
+#### Noise ####
+
+type WhiteNoiseRenderer <: AudioRenderer end
+typealias WhiteNoise AudioNode{WhiteNoiseRenderer}
+WhiteNoise() = WhiteNoise(WhiteNoiseRenderer())
+export WhiteNoise
+
+function render(node::WhiteNoiseRenderer, device_input::AudioBuf, info::DeviceInfo)
+    return rand(AudioSample, info.buf_size) .* 2 .- 1
+end
+
+
 #### AudioInput ####
 
 # Renders incoming audio input from the hardware
