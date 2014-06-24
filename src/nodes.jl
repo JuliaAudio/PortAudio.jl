@@ -178,3 +178,33 @@ end
 typealias AudioInput AudioNode{InputRenderer}
 AudioInput(channel::Int) = AudioInput(InputRenderer(channel))
 export AudioInput
+
+#### Ramp ####
+
+type LinRampRenderer <: AudioRenderer
+    start::AudioSample
+    finish::AudioSample
+    dur::Float32
+end
+
+typealias LinRamp AudioNode{LinRampRenderer}
+function LinRamp(start::Real, finish::Real, dur::Real)
+    LinRamp(LinRampRenderer(start, finish, dur))
+end
+export LinRamp
+
+
+function render(node::LinRampRenderer, device_input::AudioBuf, info::DeviceInfo)
+    ramp_samples = int(node.dur * info.sample_rate)
+    block_samples = min(ramp_samples, info.buf_size)
+    out_block = Array(AudioSample, block_samples)
+    for i in 1:block_samples
+        out_block[i] = node.start + ((i-1) / ramp_samples) *
+                (node.finish - node.start)
+    end
+    node.dur -= block_samples / info.sample_rate
+    node.start += block_samples / ramp_samples * (node.finish - node.start)
+
+    return out_block
+end
+

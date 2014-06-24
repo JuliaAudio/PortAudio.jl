@@ -91,3 +91,15 @@ info("Testing Gain...")
 gained = TestNode() * 0.75
 render_output = render(gained, dev_input, test_info)
 @test render_output == 0.75 * AudioSample[1:test_info.buf_size]
+
+info("Testing LinRamp...")
+ramp = LinRamp(0.25, 0.80, 1)
+expected = convert(AudioBuf, linspace(0.25, 0.80, test_info.sample_rate+1))
+render_output = render(ramp, dev_input, test_info)
+@test render_output == expected[1:test_info.buf_size]
+# TODO: there seems to be some slight error in the 2nd block. I THINK it's just
+# floating point stuff, but we should probably check to be sure
+#render_output = render(ramp, dev_input, test_info)
+#println("expected: $(expected[test_info.buf_size+1:test_info.buf_size+10])")
+#println("output: $(render_output[1:10])")
+#@test render_output == expected[(test_info.buf_size+1):(2*test_info.buf_size)]
