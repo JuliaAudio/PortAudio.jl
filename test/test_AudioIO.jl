@@ -1,5 +1,6 @@
 using Base.Test
 using AudioIO
+import AudioIO.AudioBuf
 
 const TEST_SAMPLERATE = 44100
 const TEST_BUF_SIZE = 1024
@@ -43,14 +44,14 @@ info("Testing Playing Float64 arrays...")
 f64 = convert(Array{Float64}, sin(phase))
 test_stream = TestAudioStream()
 player = play(f64, test_stream)
-@test process(test_stream) == convert(AudioIO.AudioBuf, f64[1:TEST_BUF_SIZE])
+@test process(test_stream) == convert(AudioBuf, f64[1:TEST_BUF_SIZE])
 
 info("Testing Playing Int8(Signed) arrays...")
 i8 = Int8[-127:127]
 test_stream = TestAudioStream()
 player = play(i8, test_stream)
 @test_approx_eq(process(test_stream)[1:255],
-                   convert(AudioIO.AudioBuf, linspace(-1.0, 1.0, 255)))
+                   convert(AudioBuf, linspace(-1.0, 1.0, 255)))
 
 info("Testing Playing Uint8(Unsigned) arrays...")
 # for unsigned 8-bit audio silence is represented as 128, so the symmetric range
@@ -59,7 +60,7 @@ ui8 = Uint8[1:255]
 test_stream = TestAudioStream()
 player = play(ui8, test_stream)
 @test_approx_eq(process(test_stream)[1:255],
-                   convert(AudioIO.AudioBuf, linspace(-1.0, 1.0, 255)))
+                   convert(AudioBuf, linspace(-1.0, 1.0, 255)))
 
 info("Testing AudioNode Stopping...")
 test_stream = TestAudioStream()
@@ -93,3 +94,22 @@ end
 info("Testing Audio Device Listing...")
 d_list = get_audio_devices()
 @test length(d_list) > 0
+
+info("Testing param control with signals")
+t = linspace(0, 1, TEST_SAMPLERATE+1)
+f = 440 .- t .* (440-110)
+dt = 1 / TEST_SAMPLERATE
+# NOTE - this treats the phase as constant at each sample, which isn't strictly
+# true. Unfortunately doing this correctly requires knowing more about the
+# modulating signal and doing the real integral
+phase = cumsum(2pi * dt .* f)
+unshift!(phase, 0)
+expected = convert(AudioBuf, sin(phase))
+
+test_stream = TestAudioStream()
+freq = LinRamp(440, 110, 1)
+player = play(SinOsc(freq), test_stream)
+out = process(test_stream)
+#println("expected: $(expected[1:30])")
+#println("got: $(out[1:30])")
+@test mse(out, expected[1:TEST_BUF_SIZE]) < 1e-16

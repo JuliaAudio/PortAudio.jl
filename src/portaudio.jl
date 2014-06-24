@@ -111,6 +111,9 @@ function portaudio_task(jl_filedesc::Integer, stream::PortAudioStream)
             ccall(:read, Clong, (Cint, Ptr{Void}, Culong),
                   jl_filedesc, desc_bytes, 1)
         end
+    catch ex
+        warn("Audio Task died with exception: $ex")
+        Base.show_backtrace(STDOUT, catch_backtrace())
     finally
         # TODO: we need to close the stream here. Otherwise the audio callback
         # will segfault accessing the output array if there were exceptions

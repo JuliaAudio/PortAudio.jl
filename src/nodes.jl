@@ -14,27 +14,45 @@ end
 
 # Generates a sin tone at the given frequency
 
-type SinOscRenderer <: AudioRenderer
-    freq::Real
-    phase::FloatingPoint
+type SinOscRenderer{T<:Union(Float32, AudioNode)} <: AudioRenderer
+    freq::T
+    phase::Float64
 
-    function SinOscRenderer(freq::Real)
+    function SinOscRenderer(freq)
         new(freq, 0.0)
     end
 end
 
 typealias SinOsc AudioNode{SinOscRenderer}
-SinOsc(freq::Real) = SinOsc(SinOscRenderer(freq))
+SinOsc(freq::Real) = SinOsc(SinOscRenderer{Float32}(freq))
+SinOsc(freq::AudioNode) = SinOsc(SinOscRenderer{AudioNode}(freq))
 SinOsc() = SinOsc(440)
 export SinOsc
 
-function render(node::SinOscRenderer, device_input::AudioBuf, info::DeviceInfo)
+function render(node::SinOscRenderer{Float32}, device_input::AudioBuf,
+        info::DeviceInfo)
     outbuf = Array(AudioSample, info.buf_size)
     phase = node.phase
     dt = 1/info.sample_rate
     for i in 1:info.buf_size
-        outbuf[i] = sin(2pi*node.freq*phase)
-        phase += dt
+        outbuf[i] = sin(phase)
+        phase += 2pi*node.freq*dt
+    end
+    node.phase = phase
+    return outbuf
+end
+
+function render(node::SinOscRenderer{AudioNode}, device_input::AudioBuf,
+        info::DeviceInfo)
+    freq = render(node.freq, device_input, info)
+    block_size = min(length(freq), info.buf_size)
+    outbuf = Array(AudioSample, block_size)
+
+    phase = node.phase
+    dt = 1/(info.sample_rate)
+    for i in 1:block_size
+        outbuf[i] = sin(phase)
+        phase += 2pi*dt*freq[i]
     end
     node.phase = phase
     return outbuf
