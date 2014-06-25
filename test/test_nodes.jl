@@ -63,12 +63,8 @@ osc = SinOsc(freq)
 render_output = render(osc, dev_input, test_info)
 @test render_output == test_vect[1:test_info.buf_size]
 render_output = render(osc, dev_input, test_info)
-for i in 1:test_info.buf_size
-    if render_output[i] != test_vect[test_info.buf_size+i]
-        println("error at index $i")
-    end
-end
 @test render_output == test_vect[test_info.buf_size+1:2*test_info.buf_size]
+@test 50000 > (@allocated render(osc, dev_input, test_info))
 stop(osc)
 render_output = render(osc, dev_input, test_info)
 @test render_output == AudioSample[]
