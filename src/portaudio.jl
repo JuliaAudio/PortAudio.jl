@@ -91,7 +91,7 @@ function portaudio_task(jl_filedesc::Integer, stream::PortAudioStream)
     try
         while true
             # assume the root is always active
-            rendered = render(stream.root.renderer, buffer, stream.info)
+            rendered = render(stream.root.renderer, buffer, stream.info)::AudioBuf
             for i in 1:length(rendered)
                 buffer[i] = rendered[i]
             end
