@@ -54,15 +54,21 @@ end
 
 function render(node::SinOscRenderer{AudioNode}, device_input::AudioBuf,
         info::DeviceInfo)
-    freq = render(node.freq, device_input, info)
+    freq = render(node.freq, device_input, info)::AudioBuf
     block_size = min(length(freq), info.buf_size)
-    outbuf = Array(AudioSample, block_size)
+    if(length(node.buf) != block_size)
+        resize!(node.buf, block_size)
+    end
+    outbuf = node.buf
 
-    phase = node.phase
-    dt = 1/(info.sample_rate)
-    for i in 1:block_size
+    phase::Float32 = node.phase
+    pi2::Float32 = 2pi
+    phase_step::Float32 = 2pi/(info.sample_rate)
+    i::Int = 1
+    while i <= block_size
         outbuf[i] = sin(phase)
-        phase += 2pi*dt*freq[i]
+        phase = (phase + phase_step*freq[i]) % pi2
+        i += 1
     end
     node.phase = phase
     return outbuf
