@@ -138,8 +138,9 @@ export Gain
 type ArrayRenderer <: AudioRenderer
     arr::AudioBuf
     arr_index::Int
+    buf::AudioBuf
 
-    ArrayRenderer(arr::AudioBuf) = new(arr, 1)
+    ArrayRenderer(arr::AudioBuf) = new(arr, 1, AudioSample[])
 end
 
 typealias ArrayPlayer AudioNode{ArrayRenderer}
@@ -147,13 +148,14 @@ ArrayPlayer(arr::AudioBuf) = ArrayPlayer(ArrayRenderer(arr))
 export ArrayPlayer
 
 function render(node::ArrayRenderer, device_input::AudioBuf, info::DeviceInfo)
-    # TODO: this should remove itself from the render tree when playback is
-    # complete
-    i = node.arr_index
-    range_end = min(i + info.buf_size-1, length(node.arr))
-    output = node.arr[i:range_end]
+    range_end = min(node.arr_index + info.buf_size-1, length(node.arr))
+    block_size = range_end - node.arr_index + 1
+    if length(node.buf) != block_size
+        resize!(node.buf, block_size)
+    end
+    copy!(node.buf, 1, node.arr, node.arr_index, block_size)
     node.arr_index = range_end + 1
-    return output
+    return node.buf
 end
 
 # Allow users to play a raw array by wrapping it in an ArrayPlayer

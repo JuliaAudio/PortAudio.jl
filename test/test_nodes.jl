@@ -92,7 +92,6 @@ render_output = render(osc, dev_input, test_info)
 @test mse(render_output,
         expected[test_info.buf_size+1:2*test_info.buf_size]) < MSE_THRESH
 # give a bigger budget here because we're rendering 2 nodes
-println("alloc: ", @allocated render(osc, dev_input, test_info))
 @test 500 > (@allocated render(osc, dev_input, test_info))
 
 info("Testing ArrayPlayer...")
@@ -102,6 +101,7 @@ render_output = render(player, dev_input, test_info)
 @test render_output == v[1:test_info.buf_size]
 render_output = render(player, dev_input, test_info)
 @test render_output == v[(test_info.buf_size + 1) : (2*test_info.buf_size)]
+@test 200 > (@allocated render(player, dev_input, test_info))
 stop(player)
 render_output = render(player, dev_input, test_info)
 @test render_output == AudioSample[]
