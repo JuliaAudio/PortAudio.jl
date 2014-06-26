@@ -213,6 +213,9 @@ type LinRampRenderer <: AudioRenderer
     start::AudioSample
     finish::AudioSample
     dur::Float32
+    buf::AudioBuf
+
+    LinRampRenderer(start, finish, dur) = new(start, finish, dur, AudioSample[])
 end
 
 typealias LinRamp AudioNode{LinRampRenderer}
@@ -225,13 +228,21 @@ export LinRamp
 function render(node::LinRampRenderer, device_input::AudioBuf, info::DeviceInfo)
     ramp_samples = int(node.dur * info.sample_rate)
     block_samples = min(ramp_samples, info.buf_size)
-    out_block = Array(AudioSample, block_samples)
-    for i in 1:block_samples
-        out_block[i] = node.start + ((i-1) / ramp_samples) *
-                (node.finish - node.start)
+    if length(node.buf) != block_samples
+        resize!(node.buf, block_samples)
+    end
+
+    out_block = node.buf
+    i::Int = 1
+    val::AudioSample = node.start
+    inc::AudioSample = (node.finish - node.start) / ramp_samples
+    while i <= block_samples
+        out_block[i] = val
+        i += 1
+        val += inc
     end
     node.dur -= block_samples / info.sample_rate
-    node.start += block_samples / ramp_samples * (node.finish - node.start)
+    node.start = val
 
     return out_block
 end
