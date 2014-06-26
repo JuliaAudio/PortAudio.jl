@@ -11,3 +11,5 @@
 +(in1::NullNode, in2::NullNode) = in1
 +(in1::AudioNode, in2::NullNode) = in1
 +(in1::NullNode, in2::AudioNode) = in2
++(in1::AudioNode, in2::Real) = Offset(in1, in2)
++(in1::Real, in2::AudioNode) = Offset(in1, in2)

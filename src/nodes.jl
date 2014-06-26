@@ -130,12 +130,26 @@ type GainRenderer <: AudioRenderer
 end
 
 function render(node::GainRenderer, device_input::AudioBuf, info::DeviceInfo)
-    input = render(node.in_node, device_input, info)
+    input = render(node.in_node, device_input, info)::AudioBuf
     return input .* node.gain
 end
 
 typealias Gain AudioNode{GainRenderer}
 export Gain
+
+#### Offset ####
+type OffsetRenderer <: AudioRenderer
+    in_node::AudioNode
+    offset::Float32
+end
+
+function render(node::OffsetRenderer, device_input::AudioBuf, info::DeviceInfo)
+    input = render(node.in_node, device_input, info)::AudioBuf
+    return input .+ node.offset
+end
+
+typealias Offset AudioNode{OffsetRenderer}
+export Offset
 
 
 #### Array Player ####
