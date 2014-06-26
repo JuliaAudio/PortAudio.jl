@@ -86,8 +86,7 @@ end
 
 # TODO: we should implement a general read(node::AudioNode) that pulls data
 # through an arbitrary render chain and returns the result as a vector
-function Base.read(file::AudioFile, nframes::Integer = file.sfinfo.frames,
-                   dtype::Type = Int16)
+function Base.read(file::AudioFile, nframes::Integer, dtype::Type)
     @assert file.sfinfo.channels <= 2
     if file.sfinfo.channels == 2
         arr = zeros(dtype, 2, nframes)
@@ -116,6 +115,10 @@ function Base.read(file::AudioFile, nframes::Integer = file.sfinfo.frames,
     return arr[1:nread]
 end
 
+Base.read(file::AudioFile, dtype::Type) = Base.read(file, file.sfinfo.frames, dtype)
+Base.read(file::AudioFile, nframes::Integer) = Base.read(file, nframes, Int16)
+Base.read(file::AudioFile) = Base.read(file, Int16)
+
 function Base.write{T}(file::AudioFile, frames::Array{T})
     @assert file.sfinfo.channels <= 2
     nframes = int(length(frames) / file.sfinfo.channels)
@@ -143,7 +146,8 @@ type FileRenderer <: AudioRenderer
     file::AudioFile
 
     function FileRenderer(file::AudioFile)
-        finalizer(node, node -> close(node.file))
+        node = new(file)
+        finalizer(node, n -> close(n.file))
         return node
     end
 end
@@ -155,7 +159,12 @@ FilePlayer(path::String) = FilePlayer(af_open(path))
 function render(node::FileRenderer, device_input::AudioBuf, info::DeviceInfo)
     @assert node.file.sfinfo.samplerate == info.sample_rate
 
-    audio = read(node.file, info.buf_size, AudioSample)
+    frames_read = 0
+    audio = AudioSample[]
+    while size(audio, 2) < info.buf_size
+        append!(audio, read(node.file, info.buf_size-size(audio, 2), AudioSample))
+        println("read $(size(audio, 2)) frames, requested $(info.buf_size-size(audio, 2))")
+    end
 
     if audio == Nothing
         return AudioSample[]
