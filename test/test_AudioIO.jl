@@ -94,22 +94,3 @@ end
 info("Testing Audio Device Listing...")
 d_list = get_audio_devices()
 @test length(d_list) > 0
-
-info("Testing param control with signals")
-t = linspace(0, 1, TEST_SAMPLERATE+1)
-f = 440 .- t .* (440-110)
-dt = 1 / TEST_SAMPLERATE
-# NOTE - this treats the phase as constant at each sample, which isn't strictly
-# true. Unfortunately doing this correctly requires knowing more about the
-# modulating signal and doing the real integral
-phase = cumsum(2pi * dt .* f)
-unshift!(phase, 0)
-expected = convert(AudioBuf, sin(phase))
-
-test_stream = TestAudioStream()
-freq = LinRamp(440, 110, 1)
-player = play(SinOsc(freq), test_stream)
-out = process(test_stream)
-#println("expected: $(expected[1:30])")
-#println("got: $(out[1:30])")
-@test mse(out, expected[1:TEST_BUF_SIZE]) < 1e-16

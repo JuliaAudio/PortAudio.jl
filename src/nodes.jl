@@ -40,13 +40,12 @@ function render(node::SinOscRenderer{Float32}, device_input::AudioBuf,
     freq = node.freq
     # make sure these are Float32s so that we don't allocate doing conversions
     # in the tight loop
-    pii::Float32 = pi
-    dt::Float32 = 1/info.sample_rate
+    pi2::Float32 = 2pi
+    phase_inc::Float32 = 2pi * freq / info.sample_rate
     i::Int = 1
     while i <= info.buf_size
         outbuf[i] = sin(phase)
-        phase += 2pii*freq*dt
-        phase = phase % 2pii
+        phase = (phase + phase_inc) % pi2
         i += 1
     end
     node.phase = phase

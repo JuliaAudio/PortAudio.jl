@@ -68,10 +68,30 @@ render_output = render(osc, dev_input, test_info)
 render_output = render(osc, dev_input, test_info)
 @test mse(render_output,
         test_vect[test_info.buf_size+1:2*test_info.buf_size]) < FLOAT_THRESH
-@test 600 > (@allocated render(osc, dev_input, test_info))
+@test 200 > (@allocated render(osc, dev_input, test_info))
 stop(osc)
 render_output = render(osc, dev_input, test_info)
 @test render_output == AudioSample[]
+
+info("Testing SinOsc with  signal input")
+t = linspace(0, 1, test_info.sample_rate+1)
+f = 440 .- t .* (440-110)
+dt = 1 / test_info.sample_rate
+# NOTE - this treats the phase as constant at each sample, which isn't strictly
+# true. Unfortunately doing this correctly requires knowing more about the
+# modulating signal and doing the real integral
+phase = cumsum(2pi * dt .* f)
+unshift!(phase, 0)
+expected = convert(AudioBuf, sin(phase))
+
+freq = LinRamp(440, 110, 1)
+osc = SinOsc(freq)
+render_output = render(osc, dev_input, test_info)
+@test mse(render_output, expected[1:test_info.buf_size]) < FLOAT_THRESH
+render_output = render(osc, dev_input, test_info)
+@test mse(render_output,
+        expected[test_info.buf_size+1:2*test_info.buf_size]) < FLOAT_THRESH
+#@test 400 > (@allocated render(osc, dev_input, test_info))
 
 info("Testing ArrayPlayer...")
 v = rand(AudioSample, 44100)
