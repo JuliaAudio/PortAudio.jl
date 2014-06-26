@@ -16,10 +16,11 @@ end
 
 type SinOscRenderer{T<:Union(Float32, AudioNode)} <: AudioRenderer
     freq::T
-    phase::Float64
+    phase::Float32
+    buf::AudioBuf
 
     function SinOscRenderer(freq)
-        new(freq, 0.0)
+        new(freq, 0.0, AudioSample[])
     end
 end
 
@@ -31,12 +32,22 @@ export SinOsc
 
 function render(node::SinOscRenderer{Float32}, device_input::AudioBuf,
         info::DeviceInfo)
-    outbuf = Array(AudioSample, info.buf_size)
+    if length(node.buf) != info.buf_size
+        resize!(node.buf, info.buf_size)
+    end
+    outbuf = node.buf
     phase = node.phase
-    dt = 1/info.sample_rate
-    for i in 1:info.buf_size
+    freq = node.freq
+    # make sure these are Float32s so that we don't allocate doing conversions
+    # in the tight loop
+    pii::Float32 = pi
+    dt::Float32 = 1/info.sample_rate
+    i::Int = 1
+    while i <= info.buf_size
         outbuf[i] = sin(phase)
-        phase += 2pi*node.freq*dt
+        phase += 2pii*freq*dt
+        phase = phase % 2pii
+        i += 1
     end
     node.phase = phase
     return outbuf

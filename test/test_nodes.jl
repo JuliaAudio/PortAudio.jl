@@ -7,9 +7,6 @@ import AudioIO.AudioNode
 import AudioIO.DeviceInfo
 import AudioIO.render
 
-test_info = DeviceInfo(44100, 512)
-dev_input = zeros(AudioSample, test_info.buf_size)
-
 # A TestNode just renders out 1:buf_size each frame
 type TestRenderer <: AudioRenderer end
 
@@ -21,6 +18,9 @@ function render(node::TestRenderer,
                 info::DeviceInfo)
     return AudioSample[1:info.buf_size]
 end
+
+test_info = DeviceInfo(44100, 512)
+dev_input = zeros(AudioSample, test_info.buf_size)
 
 #### AudioMixer Tests ####
 
@@ -54,6 +54,9 @@ stop(mix)
 render_output = render(mix, dev_input, test_info)
 @test render_output == AudioSample[]
 
+# TODO: I think we can do better than this
+const FLOAT_THRESH = 1e-9
+
 info("Testing SinOSC...")
 freq = 440
 # note that this range includes the end, which is why there are sample_rate+1 samples
@@ -61,10 +64,11 @@ t = linspace(0, 1, test_info.sample_rate+1)
 test_vect = convert(AudioBuf, sin(2pi * t * freq))
 osc = SinOsc(freq)
 render_output = render(osc, dev_input, test_info)
-@test render_output == test_vect[1:test_info.buf_size]
+@test mse(render_output, test_vect[1:test_info.buf_size]) < FLOAT_THRESH
 render_output = render(osc, dev_input, test_info)
-@test render_output == test_vect[test_info.buf_size+1:2*test_info.buf_size]
-@test 50000 > (@allocated render(osc, dev_input, test_info))
+@test mse(render_output,
+        test_vect[test_info.buf_size+1:2*test_info.buf_size]) < FLOAT_THRESH
+@test 600 > (@allocated render(osc, dev_input, test_info))
 stop(osc)
 render_output = render(osc, dev_input, test_info)
 @test render_output == AudioSample[]
