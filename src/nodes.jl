@@ -80,6 +80,9 @@ end
 
 type MixRenderer <: AudioRenderer
     inputs::Vector{AudioNode}
+    buf::AudioBuf
+
+    MixRenderer(inputs) = new(inputs, AudioSample[])
 end
 
 typealias AudioMixer AudioNode{MixRenderer}
@@ -88,21 +91,23 @@ AudioMixer() = AudioMixer(AudioNode[])
 export AudioMixer
 
 function render(node::MixRenderer, device_input::AudioBuf, info::DeviceInfo)
-    # TODO: we probably want to pre-allocate this buffer and share between
-    # render calls. Unfortunately we don't know the right size when the object
-    # is created, so maybe we check the size on every render call and only
-    # re-allocate when the size changes? I suppose that's got to be cheaper
-    # than the GC and allocation every frame
-
-    mix_buffer = zeros(AudioSample, info.buf_size)
+    if length(node.buf) != info.buf_size
+        resize!(node.buf, info.buf_size)
+    end
+    mix_buffer = node.buf
     n_inputs = length(node.inputs)
     i = 1
     max_samples = 0
+    fill!(mix_buffer, 0)
     while i <= n_inputs
         rendered = render(node.inputs[i], device_input, info)::AudioBuf
         nsamples = length(rendered)
         max_samples = max(max_samples, nsamples)
-        mix_buffer[1:nsamples] .+= rendered
+        j::Int = 1
+        while j <= nsamples
+            mix_buffer[j] += rendered[j]
+            j += 1
+        end
         if nsamples < info.buf_size
             deleteat!(node.inputs, i)
             n_inputs -= 1
@@ -110,7 +115,12 @@ function render(node::MixRenderer, device_input::AudioBuf, info::DeviceInfo)
             i += 1
         end
     end
-    return mix_buffer[1:max_samples]
+    if max_samples < length(mix_buffer)
+        return mix_buffer[1:max_samples]
+    else
+        # save the allocate and copy if we don't need to
+        return mix_buffer
+    end
 end
 
 Base.push!(mixer::AudioMixer, node::AudioNode) = push!(mixer.renderer.inputs, node)

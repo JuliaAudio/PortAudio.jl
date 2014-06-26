@@ -46,6 +46,7 @@ testnode = TestNode(test_info.buf_size)
 mix = AudioMixer([testnode])
 render_output = render(mix, dev_input, test_info)
 @test render_output == AudioSample[1:test_info.buf_size]
+@test 100 > (@allocated render(mix, dev_input, test_info))
 
 test1 = TestNode(test_info.buf_size)
 test2 = TestNode(test_info.buf_size)
