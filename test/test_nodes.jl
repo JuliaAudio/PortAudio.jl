@@ -8,19 +8,29 @@ import AudioIO.DeviceInfo
 import AudioIO.render
 
 # A TestNode just renders out 1:buf_size each frame
-type TestRenderer <: AudioRenderer end
+type TestRenderer <: AudioRenderer
+    buf::AudioBuf
+    TestRenderer(buf_size::Integer) = new(AudioSample[1:buf_size])
+end
 
 typealias TestNode AudioNode{TestRenderer}
-TestNode() = TestNode(TestRenderer())
+TestNode(buf_size) = TestNode(TestRenderer(buf_size))
 
 function render(node::TestRenderer,
                 device_input::AudioBuf,
                 info::DeviceInfo)
-    return AudioSample[1:info.buf_size]
+    return node.buf
 end
 
 test_info = DeviceInfo(44100, 512)
 dev_input = zeros(AudioSample, test_info.buf_size)
+
+# first validate that the TestNode doesn't allocate so it doesn't mess up our
+# other tests
+test = TestNode(test_info.buf_size)
+# JIT
+render(test, dev_input, test_info)
+@test ((@allocated render(test, dev_input, test_info)) < 20)
 
 #### AudioMixer Tests ####
 
@@ -32,13 +42,13 @@ mix = AudioMixer()
 render_output = render(mix, dev_input, test_info)
 @test render_output == AudioSample[]
 
-testnode = TestNode()
+testnode = TestNode(test_info.buf_size)
 mix = AudioMixer([testnode])
 render_output = render(mix, dev_input, test_info)
 @test render_output == AudioSample[1:test_info.buf_size]
 
-test1 = TestNode()
-test2 = TestNode()
+test1 = TestNode(test_info.buf_size)
+test2 = TestNode(test_info.buf_size)
 mix = AudioMixer([test1, test2])
 render_output = render(mix, dev_input, test_info)
 # make sure the two inputs are being added together
@@ -115,7 +125,7 @@ render_output = render(player, dev_input, test_info)
 
 info("Testing Gain...")
 
-gained = TestNode() * 0.75
+gained = TestNode(test_info.buf_size) * 0.75
 render_output = render(gained, dev_input, test_info)
 @test render_output == 0.75 * AudioSample[1:test_info.buf_size]
 
