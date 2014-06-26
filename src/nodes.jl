@@ -2,7 +2,6 @@
 
 type NullRenderer <: AudioRenderer end
 typealias NullNode AudioNode{NullRenderer}
-NullNode() = NullNode(NullRenderer())
 export NullNode
 
 function render(node::NullRenderer, device_input::AudioBuf, info::DeviceInfo)
@@ -83,11 +82,10 @@ type MixRenderer <: AudioRenderer
     buf::AudioBuf
 
     MixRenderer(inputs) = new(inputs, AudioSample[])
+    MixRenderer() = MixRenderer(AudioNode[])
 end
 
 typealias AudioMixer AudioNode{MixRenderer}
-AudioMixer{T<:AudioNode}(inputs::Vector{T}) = AudioMixer(MixRenderer(inputs))
-AudioMixer() = AudioMixer(AudioNode[])
 export AudioMixer
 
 function render(node::MixRenderer, device_input::AudioBuf, info::DeviceInfo)
@@ -137,7 +135,6 @@ function render(node::GainRenderer, device_input::AudioBuf, info::DeviceInfo)
 end
 
 typealias Gain AudioNode{GainRenderer}
-Gain(in_node::AudioNode, gain::Real) = Gain(GainRenderer(in_node, gain))
 export Gain
 
 
@@ -154,7 +151,6 @@ type ArrayRenderer <: AudioRenderer
 end
 
 typealias ArrayPlayer AudioNode{ArrayRenderer}
-ArrayPlayer(arr::AudioBuf) = ArrayPlayer(ArrayRenderer(arr))
 export ArrayPlayer
 
 function render(node::ArrayRenderer, device_input::AudioBuf, info::DeviceInfo)
@@ -200,7 +196,6 @@ end
 
 type WhiteNoiseRenderer <: AudioRenderer end
 typealias WhiteNoise AudioNode{WhiteNoiseRenderer}
-WhiteNoise() = WhiteNoise(WhiteNoiseRenderer())
 export WhiteNoise
 
 function render(node::WhiteNoiseRenderer, device_input::AudioBuf, info::DeviceInfo)
@@ -222,7 +217,6 @@ function render(node::InputRenderer, device_input::AudioBuf, info::DeviceInfo)
 end
 
 typealias AudioInput AudioNode{InputRenderer}
-AudioInput(channel::Int) = AudioInput(InputRenderer(channel))
 export AudioInput
 
 #### Ramp ####
@@ -237,9 +231,6 @@ type LinRampRenderer <: AudioRenderer
 end
 
 typealias LinRamp AudioNode{LinRampRenderer}
-function LinRamp(start::Real, finish::Real, dur::Real)
-    LinRamp(LinRampRenderer(start, finish, dur))
-end
 export LinRamp
 
 

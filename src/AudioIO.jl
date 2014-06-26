@@ -35,9 +35,8 @@ type AudioNode{T<:AudioRenderer}
     end_cond::Condition
     renderer::T
 
-    function AudioNode(renderer::AudioRenderer)
-        new(true, Condition(), renderer)
-    end
+    AudioNode(renderer::AudioRenderer) = new(true, Condition(), renderer)
+    AudioNode(args...) = AudioNode{T}(T(args...))
 end
 
 function render(node::AudioNode, input::AudioBuf, info::DeviceInfo)
