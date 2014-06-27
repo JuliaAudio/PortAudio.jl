@@ -83,10 +83,3 @@ can be heard at the same time. Whenever a new frame of audio is needed by the
 sound card, the stream calls the `render` method on the root audio mixer, which
 will in turn call the `render` methods on any input AudioNodes that are set
 up as inputs.
-
-Contributors
-============
-
-Spencer Russell (@ssfrr)
-
-Howard Mao (@zhemao)
