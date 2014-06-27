@@ -124,17 +124,45 @@ end
 Base.push!(mixer::AudioMixer, node::AudioNode) = push!(mixer.renderer.inputs, node)
 
 #### Gain ####
-type GainRenderer <: AudioRenderer
-    in_node::AudioNode
-    gain::Float32
+type GainRenderer{T<:Union(Float32, AudioNode)} <: AudioRenderer
+    in1::AudioNode
+    in2::T
+    buf::AudioBuf
+
+    GainRenderer(in1, in2) = new(in1, in2, AudioSample[])
 end
 
-function render(node::GainRenderer, device_input::AudioBuf, info::DeviceInfo)
-    input = render(node.in_node, device_input, info)::AudioBuf
-    return input .* node.gain
+function render(node::GainRenderer{Float32},
+                device_input::AudioBuf,
+                info::DeviceInfo)
+    input = render(node.in1, device_input, info)::AudioBuf
+    if length(node.buf) != length(input)
+        resize!(node.buf, length(input))
+    end
+    for i in 1:length(input)
+        node.buf[i] = input[i] * node.in2
+    end
+    return node.buf
+end
+
+function render(node::GainRenderer{AudioNode},
+                device_input::AudioBuf,
+                info::DeviceInfo)
+    in1_data = render(node.in1, device_input, info)::AudioBuf
+    in2_data = render(node.in2, device_input, info)::AudioBuf
+    block_size = min(length(in1_data), length(in2_data))
+    if length(node.buf) != block_size
+        resize!(node.buf, block_size)
+    end
+    for i in 1:block_size
+        node.buf[i] = in1_data[i] * in2_data[i]
+    end
+    return node.buf
 end
 
 typealias Gain AudioNode{GainRenderer}
+Gain(in1::AudioNode, in2::Real) = Gain(GainRenderer{Float32}(in1, in2))
+Gain(in1::AudioNode, in2::AudioNode) = Gain(GainRenderer{AudioNode}(in1, in2))
 export Gain
 
 #### Offset ####

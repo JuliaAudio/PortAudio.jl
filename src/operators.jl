@@ -1,5 +1,6 @@
 *(node::AudioNode, coef::Real) = Gain(node, coef)
 *(coef::Real, node::AudioNode) = Gain(node, coef)
+*(node1::AudioNode, node2::AudioNode) = Gain(node1, node2)
 # multiplying by silence gives silence
 *(in1::NullNode, in2::NullNode) = in1
 *(in1::AudioNode, in2::NullNode) = in2
