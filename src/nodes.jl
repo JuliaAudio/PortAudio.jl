@@ -139,8 +139,10 @@ function render(node::GainRenderer{Float32},
     if length(node.buf) != length(input)
         resize!(node.buf, length(input))
     end
-    for i in 1:length(input)
+    i = 1
+    while i <= length(input)
         node.buf[i] = input[i] * node.in2
+        i += 1
     end
     return node.buf
 end
@@ -154,8 +156,10 @@ function render(node::GainRenderer{AudioNode},
     if length(node.buf) != block_size
         resize!(node.buf, block_size)
     end
-    for i in 1:block_size
+    i = 1
+    while i <= block_size
         node.buf[i] = in1_data[i] * in2_data[i]
+        i += 1
     end
     return node.buf
 end
@@ -169,11 +173,22 @@ export Gain
 type OffsetRenderer <: AudioRenderer
     in_node::AudioNode
     offset::Float32
+    buf::AudioBuf
+
+    OffsetRenderer(in_node, offset) = new(in_node, offset, AudioSample[])
 end
 
 function render(node::OffsetRenderer, device_input::AudioBuf, info::DeviceInfo)
     input = render(node.in_node, device_input, info)::AudioBuf
-    return input .+ node.offset
+    if length(node.buf) != length(input)
+        resize!(node.buf, length(input))
+    end
+    i = 1
+    while i <= length(input)
+        node.buf[i] = input[i] + node.offset
+        i += 1
+    end
+    return node.buf
 end
 
 typealias Offset AudioNode{OffsetRenderer}
