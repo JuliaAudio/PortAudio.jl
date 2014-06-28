@@ -16,7 +16,7 @@ endif
 #INC =-I"$(JULIA_INC)"
 FLAGS =-Wall -Wno-strict-aliasing -fno-omit-frame-pointer -fPIC
 CFLAGS =-g
-LIBS =-lportaudio
+LIBS =-L/usr/local/lib -lportaudio
 LINUX_LIBS =-lrt
 LINUX_LDFLAGS =-rdynamic
 
