@@ -282,6 +282,7 @@ type LinRampRenderer <: AudioRenderer
     key_samples::Array{AudioSample}
     key_durations::Array{Float32}
 
+    duration::Float32
     buf::AudioBuf
 
     LinRampRenderer(start, finish, dur) = LinRampRenderer([start,finish], [dur])
@@ -294,7 +295,7 @@ type LinRampRenderer <: AudioRenderer
 
     function LinRampRenderer(key_samples::Array{AudioSample}, key_durations::Array{Float32})
         @assert length(key_samples) == length(key_durations) + 1
-        new(key_samples, key_durations, AudioSample[])
+        new(key_samples, key_durations, sum(key_durations), AudioSample[])
     end
 end
 
@@ -302,22 +303,25 @@ typealias LinRamp AudioNode{LinRampRenderer}
 export LinRamp
 
 function render(node::LinRampRenderer, device_input::AudioBuf, info::DeviceInfo)
-    # Grow buffer if it's too small
-    if length(node.buf) < info.buf_size
-        resize!(node.buf, info.buf_size)
+    # Resize buffer if (1) it's too small or (2) we've hit the end of the ramp
+    ramp_samples = int(node.duration * info.sample_rate)
+    block_samples = min(ramp_samples, info.buf_size)
+    if length(node.buf) != block_samples
+        resize!(node.buf, block_samples)
     end
 
     # Fill the buffer as long as there are more segments
     dt::Float32 = 1/info.sample_rate
     i::Int = 1
-    while i <= info.buf_size && length(node.key_samples) > 1
+    while i <= length(node.buf) && length(node.key_samples) > 1
 
         # Fill as much of the buffer as we can with the current segment
         ds::Float32 = (node.key_samples[2] - node.key_samples[1]) / node.key_durations[1] / info.sample_rate
-        while i <= info.buf_size
+        while i <= length(node.buf)
             node.buf[i] = node.key_samples[1]
             node.key_samples[1] += ds
             node.key_durations[1] -= dt
+            node.duration -= dt
             i += 1
 
             # Discard segment if we're finished

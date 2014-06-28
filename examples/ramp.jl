@@ -12,13 +12,13 @@ println("""
     *   *   *   *   *
 *   *   *   *   *   *
 """)
-wave = SinOsc(440) * LinRamp(0.0,1.0,2.0)
+wave = SinOsc(440) * LinRamp(0.0, 1.0, 2.0)
 play(wave)
 sleep(2)
 stop(wave)
 
 
-print("""
+println("""
                     *
                 *   *   *
             *   *   *   *   *
@@ -26,7 +26,7 @@ print("""
     *   *   *   *   *   *   *   *   *
 *   *   *   *   *   *   *   *   *   *   *
 """)
-wave = SinOsc(440) * LinRamp([0.0,1.0,0.0], [2.0,2.0])
+wave = SinOsc(440) * LinRamp([0.0, 1.0, 0.0], [2.0, 2.0])
 play(wave)
 sleep(4)
 stop(wave)
