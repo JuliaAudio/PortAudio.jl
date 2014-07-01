@@ -3,7 +3,7 @@
 using FactCheck
 
 test_regex = r"^test_.*\.jl$"
-test_dir = "test"
+test_dir = Pkg.dir("AudioIO", "test")
 
 test_files = filter(n -> ismatch(test_regex, n), readdir(test_dir))
 if length(test_files) == 0

@@ -100,7 +100,7 @@ facts("AudioNode Stopping") do
 end
 
 facts("WAV file write/read") do
-    fname = "test/sinwave.wav"
+    fname = Pkg.dir("AudioIO", "test", "sinwave.wav")
 
     samplerate = 44100
     freq = 440

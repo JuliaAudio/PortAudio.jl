@@ -2,12 +2,11 @@ language: cpp
 compiler:
   - clang
 notifications:
-  email: false
+  email: true
 before_install:
   - sudo add-apt-repository ppa:staticfloat/julia-deps -y
   - sudo add-apt-repository ppa:staticfloat/julianightlies -y
   - sudo apt-get update -qq -y
   - sudo apt-get install libpcre3-dev julia -y
 script:
-  - julia -e 'Pkg.init(); run(`ln -s $(pwd()) $(Pkg.dir("AudioIO"))`); Pkg.pin("AudioIO"); Pkg.resolve(); Pkg.add("BinDeps"); Pkg.build("AudioIO")'
-  - test/test.jl
+  - julia -e 'Pkg.init(); run(`ln -s $(pwd()) $(Pkg.dir("AudioIO"))`); Pkg.pin("AudioIO"); Pkg.resolve(); Pkg.add("BinDeps"); Pkg.build("AudioIO"); Pkg.test("AudioIO")'
