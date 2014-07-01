@@ -15,4 +15,5 @@ script:
   - julia -e 'Pkg.init()'
   - julia -e 'run(`ln -s $(pwd()) $(Pkg.dir("AudioIO"))`)'
   - julia -e 'Pkg.pin("AudioIO"); Pkg.resolve(); Pkg.build("AudioIO")'
-  - julia -e 'Pkg.test("AudioIO")'
+  - if [ $JULIAVERSION = "julianightlies" ]; then julia -e 'Pkg.test("AudioIO")'; fi
+  - if [ $JULIAVERSION = "juliareleases" ]; then julia test/runtests.jl; fi
