@@ -276,40 +276,65 @@ end
 typealias AudioInput AudioNode{InputRenderer}
 export AudioInput
 
-#### Ramp ####
+#### LinRamp ####
 
 type LinRampRenderer <: AudioRenderer
-    start::AudioSample
-    finish::AudioSample
-    dur::Float32
+    key_samples::Array{AudioSample}
+    key_durations::Array{Float32}
+
+    duration::Float32
     buf::AudioBuf
 
-    LinRampRenderer(start, finish, dur) = new(start, finish, dur, AudioSample[])
+    LinRampRenderer(start, finish, dur) = LinRampRenderer([start,finish], [dur])
+
+    LinRampRenderer(key_samples, key_durations) =
+        LinRampRenderer(
+            [convert(AudioSample,s) for s in key_samples],
+            [convert(Float32,d) for d in key_durations]
+        )
+
+    function LinRampRenderer(key_samples::Array{AudioSample}, key_durations::Array{Float32})
+        @assert length(key_samples) == length(key_durations) + 1
+        new(key_samples, key_durations, sum(key_durations), AudioSample[])
+    end
 end
 
 typealias LinRamp AudioNode{LinRampRenderer}
 export LinRamp
 
-
 function render(node::LinRampRenderer, device_input::AudioBuf, info::DeviceInfo)
-    ramp_samples = int(node.dur * info.sample_rate)
+    # Resize buffer if (1) it's too small or (2) we've hit the end of the ramp
+    ramp_samples = int(node.duration * info.sample_rate)
     block_samples = min(ramp_samples, info.buf_size)
     if length(node.buf) != block_samples
         resize!(node.buf, block_samples)
     end
 
-    out_block = node.buf
+    # Fill the buffer as long as there are more segments
+    dt::Float32 = 1/info.sample_rate
     i::Int = 1
-    val::AudioSample = node.start
-    inc::AudioSample = (node.finish - node.start) / ramp_samples
-    while i <= block_samples
-        out_block[i] = val
-        i += 1
-        val += inc
+    while i <= length(node.buf) && length(node.key_samples) > 1
+
+        # Fill as much of the buffer as we can with the current segment
+        ds::Float32 = (node.key_samples[2] - node.key_samples[1]) / node.key_durations[1] / info.sample_rate
+        while i <= length(node.buf)
+            node.buf[i] = node.key_samples[1]
+            node.key_samples[1] += ds
+            node.key_durations[1] -= dt
+            node.duration -= dt
+            i += 1
+
+            # Discard segment if we're finished
+            if node.key_durations[1] <= 0
+                if length(node.key_durations) > 1
+                    node.key_durations[2] -= node.key_durations[1]
+                end
+                shift!(node.key_samples)
+                shift!(node.key_durations)
+                break
+            end
+        end
     end
-    node.dur -= block_samples / info.sample_rate
-    node.start = val
 
-    return out_block
+    return node.buf
 end
-
