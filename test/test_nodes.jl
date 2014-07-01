@@ -85,7 +85,7 @@ facts("SinOSC") do
     freq = 440
     # note that this range includes the end, which is why there are
     # sample_rate+1 samples
-    t = linspace(0, 1, test_info.sample_rate+1)
+    t = linspace(0, 1, int(test_info.sample_rate+1))
     test_vect = convert(AudioBuf, sin(2pi * t * freq))
     context("Fixed Frequency") do
         osc = SinOsc(freq)
@@ -96,14 +96,14 @@ facts("SinOSC") do
         @fact mse(render_output,
                 test_vect[test_info.buf_size+1:2*test_info.buf_size]) =>
                 lessthan(MSE_THRESH)
-        @fact (@allocated render(osc, dev_input, test_info)) => 176
+        @fact (@allocated render(osc, dev_input, test_info)) => 64
         stop(osc)
         render_output = render(osc, dev_input, test_info)
         @fact render_output => AudioSample[]
     end
 
     context("Testing SinOsc with signal input") do
-        t = linspace(0, 1, test_info.sample_rate+1)
+        t = linspace(0, 1, int(test_info.sample_rate+1))
         f = 440 .- t .* (440-110)
         dt = 1 / test_info.sample_rate
         # NOTE - this treats the phase as constant at each sample, which isn't strictly
@@ -123,7 +123,7 @@ facts("SinOSC") do
                 expected[test_info.buf_size+1:2*test_info.buf_size]) =>
                 lessthan(MSE_THRESH)
         # give a bigger budget here because we're rendering 2 nodes
-        @fact (@allocated render(osc, dev_input, test_info)) => 448
+        @fact (@allocated render(osc, dev_input, test_info)) => 160
     end
 end
 
@@ -168,7 +168,7 @@ end
 
 facts("LinRamp") do
     ramp = LinRamp(0.25, 0.80, 1)
-    expected = convert(AudioBuf, linspace(0.25, 0.80, test_info.sample_rate+1))
+    expected = convert(AudioBuf, linspace(0.25, 0.80, int(test_info.sample_rate+1)))
     render_output = render(ramp, dev_input, test_info)
     @fact mse(render_output, expected[1:test_info.buf_size]) =>
             lessthan(MSE_THRESH)
@@ -176,7 +176,14 @@ facts("LinRamp") do
     @fact mse(render_output,
             expected[(test_info.buf_size+1):(2*test_info.buf_size)]) =>
             lessthan(MSE_THRESH)
-    @fact (@allocated render(ramp, dev_input, test_info)) => 256
+    @fact (@allocated render(ramp, dev_input, test_info)) => 64
+end
+
+facts("Offset") do
+    offs = TestNode(test_info.buf_size) + 0.5
+    render_output = render(offs, dev_input, test_info)
+    @fact render_output => 0.5 + AudioSample[1:test_info.buf_size]
+    @fact (@allocated render(offs, dev_input, test_info)) => 32
 end
 
 end # module TestAudioIONodes

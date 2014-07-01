@@ -26,7 +26,7 @@ abstract AudioInterface
 
 # Info about the hardware device
 type DeviceInfo
-    sample_rate::Integer
+    sample_rate::Float32
     buf_size::Integer
 end
 

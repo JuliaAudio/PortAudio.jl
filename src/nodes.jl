@@ -304,7 +304,7 @@ export LinRamp
 
 function render(node::LinRampRenderer, device_input::AudioBuf, info::DeviceInfo)
     # Resize buffer if (1) it's too small or (2) we've hit the end of the ramp
-    ramp_samples = int(node.duration * info.sample_rate)
+    ramp_samples::Int = int(node.duration * info.sample_rate)
     block_samples = min(ramp_samples, info.buf_size)
     if length(node.buf) != block_samples
         resize!(node.buf, block_samples)
