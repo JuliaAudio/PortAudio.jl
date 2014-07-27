@@ -54,6 +54,8 @@ function render(node::AudioNode, input::AudioBuf, info::DeviceInfo)
     end
 end
 
+# Get binary dependencies loaded from BinDeps
+include( "../deps/deps.jl")
 include("nodes.jl")
 include("portaudio.jl")
 include("sndfile.jl")
