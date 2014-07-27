@@ -77,7 +77,7 @@ end
 
 function handle_status(err::PaError)
     if err != PA_NO_ERROR
-        msg = ccall((:Pa_GetErrorText, "libportaudio"),
+        msg = ccall((:Pa_GetErrorText, libportaudio),
                     Ptr{Cchar}, (PaError,), err)
         error("libportaudio: " * bytestring(msg))
     end
@@ -151,14 +151,14 @@ type PortAudioInterface <: AudioInterface
 end
 
 # some thin wrappers to portaudio calls
-get_device_info(i) = unsafe_load(ccall((:Pa_GetDeviceInfo, "libportaudio"),
+get_device_info(i) = unsafe_load(ccall((:Pa_GetDeviceInfo, libportaudio),
                                  Ptr{PaDeviceInfo}, (PaDeviceIndex,), i))
-get_host_api_info(i) = unsafe_load(ccall((:Pa_GetHostApiInfo, "libportaudio"),
+get_host_api_info(i) = unsafe_load(ccall((:Pa_GetHostApiInfo, libportaudio),
                                    Ptr{PaHostApiInfo}, (PaHostApiIndex,), i))
 
 function get_portaudio_devices()
     init_portaudio()
-    device_count = ccall((:Pa_GetDeviceCount, "libportaudio"), PaDeviceIndex, ())
+    device_count = ccall((:Pa_GetDeviceCount, libportaudio), PaDeviceIndex, ())
     pa_devices = [get_device_info(i) for i in 0:(device_count - 1)]
     [PortAudioInterface(bytestring(d.name),
                         bytestring(get_host_api_info(d.host_api).name),
@@ -174,7 +174,7 @@ function init_portaudio()
         @assert(libportaudio_shim != "", "Failed to find required library libportaudio_shim. Try re-running the package script using Pkg.build(\"AudioIO\"), then reloading with reload(\"AudioIO\")")
 
         info("Initializing PortAudio. Expect errors as we scan devices")
-        err = ccall((:Pa_Initialize, "libportaudio"), PaError, ())
+        err = ccall((:Pa_Initialize, libportaudio), PaError, ())
         handle_status(err)
         portaudio_inited = true
     end

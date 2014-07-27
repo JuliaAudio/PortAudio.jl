@@ -1,7 +1,5 @@
 export af_open, FilePlayer
 
-const sndfile = "libsndfile"
-
 const SFM_READ = int32(0x10)
 const SFM_WRITE = int32(0x20)
 
@@ -59,12 +57,12 @@ function af_open(path::String, mode::String = "r",
         end
     end
 
-    filePtr = ccall((:sf_open, sndfile), Ptr{Void},
+    filePtr = ccall((:sf_open, libsndfile), Ptr{Void},
                     (Ptr{Uint8}, Int32, Ptr{SF_INFO}),
                     path, file_mode, &sfinfo)
 
     if filePtr == C_NULL
-        errmsg = ccall((:sf_strerror, sndfile), Ptr{Uint8}, (Ptr{Void},), filePtr)
+        errmsg = ccall((:sf_strerror, libsndfile), Ptr{Uint8}, (Ptr{Void},), filePtr)
         error(bytestring(errmsg))
     end
 
@@ -72,7 +70,7 @@ function af_open(path::String, mode::String = "r",
 end
 
 function Base.close(file::AudioFile)
-    err = ccall((:sf_close, sndfile), Int32, (Ptr{Void},), file.filePtr)
+    err = ccall((:sf_close, libsndfile), Int32, (Ptr{Void},), file.filePtr)
     if err != 0
         error("Failed to close file")
     end
@@ -95,19 +93,19 @@ function Base.read(file::AudioFile, nframes::Integer, dtype::Type)
     end
 
     if dtype == Int16
-        nread = ccall((:sf_readf_short, sndfile), Int64,
+        nread = ccall((:sf_readf_short, libsndfile), Int64,
                         (Ptr{Void}, Ptr{Int16}, Int64),
                         file.filePtr, arr, nframes)
     elseif dtype == Int32
-        nread = ccall((:sf_readf_int, sndfile), Int64,
+        nread = ccall((:sf_readf_int, libsndfile), Int64,
                         (Ptr{Void}, Ptr{Int32}, Int64),
                         file.filePtr, arr, nframes)
     elseif dtype == Float32
-        nread = ccall((:sf_readf_float, sndfile), Int64,
+        nread = ccall((:sf_readf_float, libsndfile), Int64,
                         (Ptr{Void}, Ptr{Float32}, Int64),
                         file.filePtr, arr, nframes)
     elseif dtype == Float64
-        nread = ccall((:sf_readf_double, sndfile), Int64,
+        nread = ccall((:sf_readf_double, libsndfile), Int64,
                         (Ptr{Void}, Ptr{Float64}, Int64),
                         file.filePtr, arr, nframes)
     end
@@ -124,19 +122,19 @@ function Base.write{T}(file::AudioFile, frames::Array{T})
     nframes = int(length(frames) / file.sfinfo.channels)
 
     if T == Int16
-        return ccall((:sf_writef_short, sndfile), Int64,
+        return ccall((:sf_writef_short, libsndfile), Int64,
                         (Ptr{Void}, Ptr{Int16}, Int64),
                         file.filePtr, frames, nframes)
     elseif T == Int32
-        return ccall((:sf_writef_int, sndfile), Int64,
+        return ccall((:sf_writef_int, libsndfile), Int64,
                         (Ptr{Void}, Ptr{Int32}, Int64),
                         file.filePtr, frames, nframes)
     elseif T == Float32
-        return ccall((:sf_writef_float, sndfile), Int64,
+        return ccall((:sf_writef_float, libsndfile), Int64,
                         (Ptr{Void}, Ptr{Float32}, Int64),
                         file.filePtr, frames, nframes)
     elseif T == Float64
-        return ccall((:sf_writef_double, sndfile), Int64,
+        return ccall((:sf_writef_double, libsndfile), Int64,
                         (Ptr{Void}, Ptr{Float64}, Int64),
                         file.filePtr, frames, nframes)
     end
