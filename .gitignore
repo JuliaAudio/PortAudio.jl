@@ -1,7 +1,6 @@
 *.swp
 *.so
 *.o
-deps/usr
 deps/deps.jl
 *.wav
 *.flac

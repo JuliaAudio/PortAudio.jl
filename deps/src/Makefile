@@ -23,6 +23,7 @@ LINUX_LDFLAGS =-rdynamic
 # portaudio and libsndfile
 DARWIN_LDFLAGS =-L../../../Homebrew/deps/usr/lib
 DARWIN_INC =-I../../../Homebrew/deps/usr/include
+TARGETDIR=../usr/lib
 
 OBJS = shim.o
 
@@ -46,13 +47,17 @@ else
   INC += $(LINUX_INC)
 endif
 
-default: libportaudio_shim.$(SHLIB_EXT)
+TARGET=$(TARGETDIR)/libportaudio_shim.$(SHLIB_EXT)
+
+default: $(TARGET)
 
 %.o: %.c Makefile
 	$(CC) $< -fPIC -c -o $@ $(INC) $(CFLAGS) $(FLAGS)
 
-libportaudio_shim.$(SHLIB_EXT): $(OBJS)
+$(TARGET): $(OBJS) Makefile
+	mkdir -p $(TARGETDIR)
 	$(CC) $(OBJS) -shared -o $@ $(LDFLAGS) $(LIBS)
 
 clean:
-	rm -f *.o *.$(SHLIB_EXT)
+	rm -f *.o
+	rm -f $(TARGET)
