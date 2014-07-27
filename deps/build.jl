@@ -17,7 +17,7 @@ provides(AptGet, {"libsndfile1-dev" => libsndfile})
     end
     using Homebrew
     provides(Homebrew.HB, {"portaudio" => libportaudio})
-    provides(Homebrew.HB, {"sndfile" => libsndfile})
+    provides(Homebrew.HB, {"libsndfile" => libsndfile})
 end
 
 @BinDeps.install [:libportaudio => :libportaudio,
