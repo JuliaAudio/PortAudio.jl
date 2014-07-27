@@ -23,12 +23,8 @@ end
 @BinDeps.install [:libportaudio => :libportaudio,
                   :libsndfile => :libsndfile]
 
-cd(joinpath(Pkg.dir(), "AudioIO", "deps", "src") )
-run(`make`)
-if (!ispath("../usr"))
-  run(`mkdir ../usr`)
+# we're shipping a binary for OSX
+@linux_only begin
+    cd(Pkg.dir("AudioIO", "deps", "src"))
+    run(`make`)
 end
-if (!ispath("../usr/lib"))
-  run(`mkdir ../usr/lib`)
-end
-run(`mv libportaudio_shim.$(BinDeps.shlib_ext) ../usr/lib`)
