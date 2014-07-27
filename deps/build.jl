@@ -23,8 +23,5 @@ end
 @BinDeps.install [:libportaudio => :libportaudio,
                   :libsndfile => :libsndfile]
 
-# we're shipping a binary for OSX
-@linux_only begin
-    cd(Pkg.dir("AudioIO", "deps", "src"))
-    run(`make`)
-end
+# cd(Pkg.dir("AudioIO", "deps", "src"))
+# run(`make`)
