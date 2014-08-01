@@ -162,10 +162,6 @@ function render(node::FileRenderer, device_input::AudioBuf, info::DeviceInfo)
         audio = hcat(audio, read_audio)
     end
 
-    if audio == Nothing
-        return AudioSample[]
-    end
-
     # if the file is stereo, mix the two channels together
     if node.file.sfinfo.channels == 2
         return (audio[1, :] / 2) + (audio[2, :] / 2)
