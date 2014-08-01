@@ -86,11 +86,7 @@ end
 # through an arbitrary render chain and returns the result as a vector
 function Base.read(file::AudioFile, nframes::Integer, dtype::Type)
     @assert file.sfinfo.channels <= 2
-    if file.sfinfo.channels == 2
-        arr = zeros(dtype, 2, nframes)
-    else
-        arr = zeros(dtype, nframes)
-    end
+    arr = zeros(dtype, file.sfinfo.channels, nframes)
 
     if dtype == Int16
         nread = ccall((:sf_readf_short, libsndfile), Int64,
@@ -110,7 +106,7 @@ function Base.read(file::AudioFile, nframes::Integer, dtype::Type)
                         file.filePtr, arr, nframes)
     end
 
-    return arr[1:nread]
+    return arr[:, 1:nread]
 end
 
 Base.read(file::AudioFile, dtype::Type) = Base.read(file, file.sfinfo.frames, dtype)
@@ -157,11 +153,10 @@ FilePlayer(path::String) = FilePlayer(af_open(path))
 function render(node::FileRenderer, device_input::AudioBuf, info::DeviceInfo)
     @assert node.file.sfinfo.samplerate == info.sample_rate
 
-    frames_read = 0
-    audio = AudioSample[]
+    # Keep reading data from the file until the output buffer is full
+    audio = Array(AudioSample, node.file.sfinfo.channels, 0)
     while size(audio, 2) < info.buf_size
-        append!(audio, read(node.file, info.buf_size-size(audio, 2), AudioSample))
-        println("read $(size(audio, 2)) frames, requested $(info.buf_size-size(audio, 2))")
+        audio = hcat(audio, read(node.file, info.buf_size-size(audio, 2), AudioSample))
     end
 
     if audio == Nothing
@@ -171,9 +166,9 @@ function render(node::FileRenderer, device_input::AudioBuf, info::DeviceInfo)
     # if the file is stereo, mix the two channels together
     if node.file.sfinfo.channels == 2
         return (audio[1, :] / 2) + (audio[2, :] / 2)
+    else
+        return audio
     end
-
-    return audio
 end
 
 function play(filename::String, args...)
