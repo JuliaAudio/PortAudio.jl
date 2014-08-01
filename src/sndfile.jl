@@ -1,4 +1,4 @@
-export af_open, FilePlayer
+export af_open, FilePlayer, rewind
 
 const SFM_READ = int32(0x10)
 const SFM_WRITE = int32(0x20)
@@ -11,6 +11,10 @@ const SF_FORMAT_PCM_S8 = 0x0001 # Signed 8  bit data
 const SF_FORMAT_PCM_16 = 0x0002 # Signed 16 bit data
 const SF_FORMAT_PCM_24 = 0x0003 # Signed 24 bit data
 const SF_FORMAT_PCM_32 = 0x0004 # Signed 32 bit data
+
+const SF_SEEK_SET = 0
+const SF_SEEK_CUR = 1
+const SF_SEEK_END = 2
 
 const EXT_TO_FORMAT = [
     ".wav" => SF_FORMAT_WAV,
@@ -75,6 +79,21 @@ function Base.close(file::AudioFile)
         error("Failed to close file")
     end
 end
+
+function Base.seek(file::AudioFile, offset::Integer, whence::Integer)
+    new_offset = ccall((:sf_seek, libsndfile), Int64,
+        (Ptr{Void}, Int64, Int32), file.filePtr, offset, whence)
+
+    if new_offset < 0
+        error("Could not seek to $(offset) in file")
+    end
+
+    new_offset
+end
+
+# Some convenience methods for easily navigating through a sound file
+Base.seek(file::AudioFile, offset::Integer) = seek(file, offset, SF_SEEK_SET)
+rewind(file::AudioFile) = seek(file, 0, SF_SEEK_SET)
 
 function af_open(f::Function, args...)
     file = af_open(args...)
