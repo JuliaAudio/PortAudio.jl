@@ -153,10 +153,13 @@ FilePlayer(path::String) = FilePlayer(af_open(path))
 function render(node::FileRenderer, device_input::AudioBuf, info::DeviceInfo)
     @assert node.file.sfinfo.samplerate == info.sample_rate
 
-    # Keep reading data from the file until the output buffer is full
+    # Keep reading data from the file until the output buffer is full, but stop
+    # as soon as no more data can be read from the file
     audio = Array(AudioSample, node.file.sfinfo.channels, 0)
-    while size(audio, 2) < info.buf_size
-        audio = hcat(audio, read(node.file, info.buf_size-size(audio, 2), AudioSample))
+    read_audio = zeros(AudioSample, node.file.sfinfo.channels, 1)
+    while size(audio, 2) < info.buf_size && size(read_audio, 2) > 0
+        read_audio = read(node.file, info.buf_size-size(audio, 2), AudioSample)
+        audio = hcat(audio, read_audio)
     end
 
     if audio == Nothing
