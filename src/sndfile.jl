@@ -1,4 +1,4 @@
-export af_open, FilePlayer
+export af_open, FilePlayer, rewind
 
 const SFM_READ = int32(0x10)
 const SFM_WRITE = int32(0x20)
@@ -11,6 +11,10 @@ const SF_FORMAT_PCM_S8 = 0x0001 # Signed 8  bit data
 const SF_FORMAT_PCM_16 = 0x0002 # Signed 16 bit data
 const SF_FORMAT_PCM_24 = 0x0003 # Signed 24 bit data
 const SF_FORMAT_PCM_32 = 0x0004 # Signed 32 bit data
+
+const SF_SEEK_SET = 0
+const SF_SEEK_CUR = 1
+const SF_SEEK_END = 2
 
 const EXT_TO_FORMAT = [
     ".wav" => SF_FORMAT_WAV,
@@ -93,11 +97,7 @@ end
 # through an arbitrary render chain and returns the result as a vector
 function Base.read(file::AudioFile, nframes::Integer, dtype::Type)
     @assert file.sfinfo.channels <= 2
-    if file.sfinfo.channels == 2
-        arr = zeros(dtype, 2, nframes)
-    else
-        arr = zeros(dtype, nframes)
-    end
+    arr = zeros(dtype, nframes, file.sfinfo.channels)
 
     if dtype == Int16
         nread = ccall((:sf_readf_short, libsndfile), Int64,
@@ -117,7 +117,7 @@ function Base.read(file::AudioFile, nframes::Integer, dtype::Type)
                         file.filePtr, arr, nframes)
     end
 
-    return arr[1:nread]
+    return arr[1:nread, :]
 end
 
 Base.read(file::AudioFile, dtype::Type) = Base.read(file, file.sfinfo.frames, dtype)
@@ -147,6 +147,21 @@ function Base.write{T}(file::AudioFile, frames::Array{T})
     end
 end
 
+function Base.seek(file::AudioFile, offset::Integer, whence::Integer)
+    new_offset = ccall((:sf_seek, libsndfile), Int64,
+        (Ptr{Void}, Int64, Int32), file.filePtr, offset, whence)
+
+    if new_offset < 0
+        error("Could not seek to $(offset) in file")
+    end
+
+    new_offset
+end
+
+# Some convenience methods for easily navigating through a sound file
+Base.seek(file::AudioFile, offset::Integer) = seek(file, offset, SF_SEEK_SET)
+rewind(file::AudioFile) = seek(file, 0, SF_SEEK_SET)
+
 type FileRenderer <: AudioRenderer
     file::AudioFile
 
@@ -164,23 +179,21 @@ FilePlayer(path::String) = FilePlayer(AudioIO.open(path))
 function render(node::FileRenderer, device_input::AudioBuf, info::DeviceInfo)
     @assert node.file.sfinfo.samplerate == info.sample_rate
 
-    frames_read = 0
-    audio = AudioSample[]
-    while size(audio, 2) < info.buf_size
-        append!(audio, read(node.file, info.buf_size-size(audio, 2), AudioSample))
-        println("read $(size(audio, 2)) frames, requested $(info.buf_size-size(audio, 2))")
-    end
-
-    if audio == Nothing
-        return AudioSample[]
+    # Keep reading data from the file until the output buffer is full, but stop
+    # as soon as no more data can be read from the file
+    audio = Array(AudioSample, 0, node.file.sfinfo.channels)
+    read_audio = zeros(AudioSample, 1, node.file.sfinfo.channels)
+    while size(audio, 1) < info.buf_size && size(read_audio, 1) > 0
+        read_audio = read(node.file, info.buf_size-size(audio, 1), AudioSample)
+        audio = vcat(audio, read_audio)
     end
 
     # if the file is stereo, mix the two channels together
     if node.file.sfinfo.channels == 2
         return (audio[1, :] / 2) + (audio[2, :] / 2)
+    else
+        return audio
     end
-
-    return audio
 end
 
 function play(filename::String, args...)
