@@ -37,7 +37,9 @@ type AudioFile
     sfinfo::SF_INFO
 end
 
-function af_open(path::String, mode::String = "r",
+# AudioIO.open is part of the public API, but is not exported so that it
+# doesn't conflict with Base.open
+function open(path::String, mode::String = "r",
             sampleRate::Integer = 44100, channels::Integer = 1,
             format::Integer = 0)
     @assert channels <= 2
@@ -76,10 +78,15 @@ function Base.close(file::AudioFile)
     end
 end
 
-function af_open(f::Function, args...)
-    file = af_open(args...)
+function open(f::Function, args...)
+    file = AudioIO.open(args...)
     f(file)
     close(file)
+end
+
+function af_open(args...)
+    warn("af_open is deprecated, please use AudioIO.open instead")
+    AudioIO.open(args...)
 end
 
 # TODO: we should implement a general read(node::AudioNode) that pulls data
@@ -152,7 +159,7 @@ end
 
 typealias FilePlayer AudioNode{FileRenderer}
 FilePlayer(file::AudioFile) = FilePlayer(FileRenderer(file))
-FilePlayer(path::String) = FilePlayer(af_open(path))
+FilePlayer(path::String) = FilePlayer(AudioIO.open(path))
 
 function render(node::FileRenderer, device_input::AudioBuf, info::DeviceInfo)
     @assert node.file.sfinfo.samplerate == info.sample_rate

@@ -108,11 +108,11 @@ facts("WAV file write/read") do
     phase = 2 * pi * freq * t
     reference = int16((2 ^ 15 - 1) * sin(phase))
 
-    af_open(fname, "w") do f
+    AudioIO.open(fname, "w") do f
         write(f, reference)
     end
 
-    af_open(fname) do f
+    AudioIO.open(fname) do f
         @fact f.sfinfo.channels => 1
         @fact f.sfinfo.frames => 2 * samplerate
         actual = read(f, 2 * samplerate)
