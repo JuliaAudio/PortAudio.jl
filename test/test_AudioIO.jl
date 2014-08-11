@@ -9,24 +9,6 @@ const TEST_BUF_SIZE = 1024
 
 include("testhelpers.jl")
 
-# convenience function to calculate the mean-squared error
-function mse(arr1::Array, arr2::Array)
-    @assert length(arr1) == length(arr2)
-    N = length(arr1)
-    err = 0.0
-    for i in 1:N
-        err += (arr2[i] - arr1[i])^2
-    end
-    err /= N
-end
-
-mse(X::AbstractArray, thresh=1e-8) = Y::AbstractArray -> begin
-    if size(X) != size(Y)
-        return false
-    end
-
-    return mse(X, Y) < thresh
-end
 
 type TestAudioStream <: AudioIO.AudioStream
     root::AudioIO.AudioMixer
@@ -97,27 +79,6 @@ facts("AudioNode Stopping") do
     process(test_stream)
     stop(node)
     @fact process(test_stream) => zeros(AudioIO.AudioSample, TEST_BUF_SIZE)
-end
-
-facts("WAV file write/read") do
-    fname = Pkg.dir("AudioIO", "test", "sinwave.wav")
-
-    samplerate = 44100
-    freq = 440
-    t = [0 : 2 * samplerate - 1] / samplerate
-    phase = 2 * pi * freq * t
-    reference = int16((2 ^ 15 - 1) * sin(phase))
-
-    AudioIO.open(fname, "w") do f
-        write(f, reference)
-    end
-
-    AudioIO.open(fname) do f
-        @fact f.sfinfo.channels => 1
-        @fact f.sfinfo.frames => 2 * samplerate
-        actual = read(f, 2 * samplerate)
-        @fact reference => mse(actual)
-    end
 end
 
 facts("Audio Device Listing") do

@@ -2,12 +2,8 @@ module TestAudioIONodes
 
 using FactCheck
 using AudioIO
-import AudioIO.AudioSample
-import AudioIO.AudioBuf
-import AudioIO.AudioRenderer
-import AudioIO.AudioNode
-import AudioIO.DeviceInfo
-import AudioIO.render
+import AudioIO: AudioSample, AudioBuf, AudioRenderer, AudioNode
+import AudioIO: DeviceInfo, render
 
 include("testhelpers.jl")
 
