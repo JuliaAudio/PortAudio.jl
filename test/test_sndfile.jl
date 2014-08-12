@@ -4,7 +4,7 @@ include("testhelpers.jl")
 
 using AudioIO
 using FactCheck
-import AudioIO: DeviceInfo, render, AudioSample
+import AudioIO: DeviceInfo, render, AudioSample, AudioBuf
 
 facts("WAV file write/read") do
     fname = Pkg.dir("AudioIO", "test", "sinwave.wav")
@@ -23,19 +23,24 @@ facts("WAV file write/read") do
     AudioIO.open(fname) do f
         @fact f.sfinfo.channels => 1
         @fact f.sfinfo.frames => 2 * samplerate
-        actual = read(f, 2 * samplerate)
-        @fact reference => mse(actual)
+        actual = read(f)
+        @fact length(reference) => length(actual)
+        @fact reference => actual[:, 1]
     end
 
     # test rendering as an AudioNode
     AudioIO.open(fname) do f
         # pretend we have a stream at the same rate as the file
-        bufsize = 512
+        bufsize = 1024
         input = zeros(AudioSample, bufsize)
         test_info = DeviceInfo(samplerate, bufsize)
         node = FilePlayer(f)
+        # convert to floating point because that's what AudioIO uses natively
+        expected = convert(AudioBuf, reference ./ (2^15))
         buf = render(node, input, test_info)
-        @fact buf => mse(actual[1:bufsize])
+        @fact expected[1:bufsize] => buf[1:bufsize]
+        buf = render(node, input, test_info)
+        @fact expected[bufsize+1:2*bufsize] => buf[1:bufsize]
     end
 
 end
