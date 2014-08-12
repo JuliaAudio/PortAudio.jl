@@ -97,7 +97,8 @@ end
 # through an arbitrary render chain and returns the result as a vector
 function Base.read(file::AudioFile, nframes::Integer, dtype::Type)
     @assert file.sfinfo.channels <= 2
-    arr = zeros(dtype, nframes, file.sfinfo.channels)
+    # the data comes in interleaved
+    arr = zeros(dtype, file.sfinfo.channels, nframes)
 
     if dtype == Int16
         nread = ccall((:sf_readf_short, libsndfile), Int64,
@@ -117,7 +118,7 @@ function Base.read(file::AudioFile, nframes::Integer, dtype::Type)
                         file.filePtr, arr, nframes)
     end
 
-    return arr[1:nread, :]
+    return arr[:, 1:nread]'
 end
 
 Base.read(file::AudioFile, dtype::Type) = Base.read(file, file.sfinfo.frames, dtype)
