@@ -60,23 +60,23 @@ end
 
 # note - currently AudioIO just mixes down to Mono. soon we'll support this
 # new-fangled stereo sound stuff
-#facts("Stereo file rendering") do
-#    fname = Pkg.dir("AudioIO", "test", "440left_880right.wav")
-#    samplerate = 44100
-#    bufsize = 1024
-#    input = zeros(AudioSample, bufsize)
-#    test_info = DeviceInfo(samplerate, bufsize)
-#    t = [0 : 2 * samplerate - 1] / samplerate
-#    expected = convert(AudioBuf, 0.5 * (sin(2pi*t*440) + sin(2pi*t*880)))
-#
-#    AudioIO.open(fname) do f
-#        node = FilePlayer(f)
-#        buf = render(node, input, test_info)
-#        print(size(buf))
-#        @fact expected[1:bufsize] => buf[1:bufsize]
-#        buf = render(node, input, test_info)
-#        @fact expected[bufsize+1:2*bufsize] => buf[1:bufsize]
-#    end
-#end
+facts("Stereo file rendering") do
+    fname = Pkg.dir("AudioIO", "test", "440left_880right.wav")
+    samplerate = 44100
+    bufsize = 1024
+    input = zeros(AudioSample, bufsize)
+    test_info = DeviceInfo(samplerate, bufsize)
+    t = [0 : 2 * samplerate - 1] / samplerate
+    expected = convert(AudioBuf, 0.5 * (sin(2pi*t*440) + sin(2pi*t*880)))
+
+    AudioIO.open(fname) do f
+        node = FilePlayer(f)
+        buf = render(node, input, test_info)
+        print(size(buf))
+        @fact expected[1:bufsize] => buf[1:bufsize]
+        buf = render(node, input, test_info)
+        @fact expected[bufsize+1:2*bufsize] => buf[1:bufsize]
+    end
+end
 
 end # module TestSndfile
