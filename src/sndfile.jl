@@ -183,15 +183,17 @@ function render(node::FileRenderer, device_input::AudioBuf, info::DeviceInfo)
     # Keep reading data from the file until the output buffer is full, but stop
     # as soon as no more data can be read from the file
     audio = Array(AudioSample, 0, node.file.sfinfo.channels)
-    read_audio = zeros(AudioSample, 1, node.file.sfinfo.channels)
-    while size(audio, 1) < info.buf_size && size(read_audio, 1) > 0
+    while true
         read_audio = read(node.file, info.buf_size-size(audio, 1), AudioSample)
         audio = vcat(audio, read_audio)
+        if size(audio, 1) >= info.buf_size || size(read_audio, 1) <= 0
+            break
+        end
     end
 
     # if the file is stereo, mix the two channels together
     if node.file.sfinfo.channels == 2
-        return (audio[1, :] / 2) + (audio[2, :] / 2)
+        return (audio[:, 1] / 2) + (audio[:, 2] / 2)
     else
         return audio
     end

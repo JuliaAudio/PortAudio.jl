@@ -72,10 +72,9 @@ facts("Stereo file rendering") do
     AudioIO.open(fname) do f
         node = FilePlayer(f)
         buf = render(node, input, test_info)
-        print(size(buf))
-        @fact expected[1:bufsize] => buf[1:bufsize]
+        @fact buf[1:bufsize] => mse(expected[1:bufsize])
         buf = render(node, input, test_info)
-        @fact expected[bufsize+1:2*bufsize] => buf[1:bufsize]
+        @fact buf[1:bufsize] => mse(expected[bufsize+1:2*bufsize])
     end
 end
 
