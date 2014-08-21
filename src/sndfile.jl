@@ -84,8 +84,11 @@ end
 
 function open(f::Function, args...)
     file = AudioIO.open(args...)
-    f(file)
-    close(file)
+    try
+        f(file)
+    finally
+        close(file)
+    end
 end
 
 function af_open(args...)
