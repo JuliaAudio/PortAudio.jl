@@ -1,25 +1,48 @@
 AudioIO.jl
 ==========
 
-[![Build Status](https://travis-ci.org/ssfrr/AudioIO.jl.png?branch=master)](https://travis-ci.org/ssfrr/AudioIO.jl)  [![Coverage Status](https://coveralls.io/repos/ssfrr/AudioIO.jl/badge.png?branch=master)](https://coveralls.io/r/ssfrr/AudioIO.jl?branch=master)
+[![Build Status](https://travis-ci.org/ssfrr/AudioIO.jl.png?branch=master)](https://travis-ci.org/ssfrr/AudioIO.jl)
+[![Coverage Status](https://coveralls.io/repos/ssfrr/AudioIO.jl/badge.png?branch=master)](https://coveralls.io/r/ssfrr/AudioIO.jl?branch=master)
 
-AudioIO is a Julia library for interfacing to audio streams, which include
-playing to and recording from sound cards, reading and writing audio files,
-sending to network audio streams, etc. Currently only playing to the sound card
-through PortAudio is supported. It is under heavy development, so the API could
-change, there will be bugs, there are important missing features.
+AudioIO interfaces to audio streams, including real-time recording, audio
+processing, and playback through your sound card using PortAudio. It also
+supports reading and writing audio files in a variety of formats. It is under
+active development and the low-level API could change, but the basic
+functionality (reading and writing files, the `play` function, etc.) should be
+stable and usable by the general Julia community.
 
-Installation
-------------
+File I/O
+--------
 
-To install the latest release version, simply run
+File I/O is handled by [libsndfile](http://www.mega-nerd.com/libsndfile/), so
+we can support a wide variety of file and sample formats. Use the
+`AudioIO.open` function to open a file. It has the same API as the built-in
+Base.open, but returns an `AudioFile` type. Opening an audio file and reading
+its contents into an array is as simple as:
 
-    julia> Pkg.add("AudioIO")
+```julia
+f = AudioIO.open("data/never_gonna_give_you_up.wav")
+data = read(f)
+close(f)
+```
 
-If you want to install the lastest master, it's almost as easy:
+Or to hand closing the file automatically (including in the case of unexpected
+exceptions), we support the `do` block syntax:
 
-    julia> Pkg.clone("AudioIO")
-    julia> Pkg.build("AudioIO")
+```julia
+data = AudioIO.open("data/never_gonna_let_you_down.wav") do f
+    read(f)
+end
+```
+
+By default the returned array will be in whatever format the original audio file is
+(Float32, UInt16, etc.). We also support automatic conversion by supplying a type:
+
+```julia
+data = AudioIO.open("data/never_gonna_run_around.wav") do f
+    read(f, Float32)
+end
+```
 
 Basic Array Playback
 --------------------
@@ -32,8 +55,10 @@ mapped to [-1, 1] floating point values.
 
 To play a 1-second burst of noise:
 
-    julia> v = rand(44100) * 0.1
-    julia> play(v)
+```julia
+julia> v = rand(44100) * 0.1
+julia> play(v)
+```
 
 AudioNodes
 ----------
@@ -49,18 +74,22 @@ can be stopped if desired.
 
 To explictly do the same as above:
 
-    julia> v = rand(44100) * 0.1
-    julia> player = ArrayPlayer(v)
-    julia> play(player)
+```julia
+julia> v = rand(44100) * 0.1
+julia> player = ArrayPlayer(v)
+julia> play(player)
+```
 
 To generate 2 sin tones:
 
-    julia> osc1 = SinOsc(440)
-    julia> osc2 = SinOsc(660)
-    julia> play(osc1)
-    julia> play(osc2)
-    julia> stop(osc1)
-    julia> stop(osc2)
+```julia
+julia> osc1 = SinOsc(440)
+julia> osc2 = SinOsc(660)
+julia> play(osc1)
+julia> play(osc2)
+julia> stop(osc1)
+julia> stop(osc2)
+```
 
 All AudioNodes must implement a `render` function that can be called to
 retreive the next block of audio.
@@ -83,3 +112,20 @@ can be heard at the same time. Whenever a new frame of audio is needed by the
 sound card, the stream calls the `render` method on the root audio mixer, which
 will in turn call the `render` methods on any input AudioNodes that are set
 up as inputs.
+
+Installation
+------------
+
+To install the latest release version, simply run
+
+```julia
+julia> Pkg.add("AudioIO")
+```
+
+If you want to install the lastest master, it's almost as easy:
+
+```julia
+julia> Pkg.clone("AudioIO")
+julia> Pkg.build("AudioIO")
+```
+
