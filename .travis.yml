@@ -15,6 +15,6 @@ script:
   - julia -e 'Pkg.init()'
   - julia -e 'run(`ln -s $(pwd()) $(Pkg.dir("AudioIO"))`)'
   - julia -e 'Pkg.pin("AudioIO"); Pkg.resolve(); Pkg.build("AudioIO")'
-  - julia --code-coverage -e 'Pkg.test("AudioIO")'
+  - julia -e 'Pkg.test("AudioIO", coverage=true)'
 after_success:
 - if [ $JULIAVERSION = "juliareleases" ]; then julia -e 'cd(Pkg.dir("AudioIO")); Pkg.add("Coverage"); using Coverage; Coveralls.submit(Coveralls.process_folder())'; fi
