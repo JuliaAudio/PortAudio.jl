@@ -2,10 +2,10 @@ language: cpp
 compiler:
   - clang
 notifications:
-  email: true
+  email: spencer.f.russell@gmail.com
 env:
     - JULIAVERSION="julianightlies"
-#    - JULIAVERSION="juliareleases"
+    - JULIAVERSION="juliareleases"
 before_install:
   - sudo add-apt-repository ppa:staticfloat/julia-deps -y
   - sudo add-apt-repository ppa:staticfloat/$JULIAVERSION -y
@@ -15,5 +15,6 @@ script:
   - julia -e 'Pkg.init()'
   - julia -e 'run(`ln -s $(pwd()) $(Pkg.dir("AudioIO"))`)'
   - julia -e 'Pkg.pin("AudioIO"); Pkg.resolve(); Pkg.build("AudioIO")'
-  - if [ $JULIAVERSION = "julianightlies" ]; then julia -e 'Pkg.test("AudioIO")'; fi
-  - if [ $JULIAVERSION = "juliareleases" ]; then julia -e 'Pkg.add("FactCheck")'; julia test/runtests.jl; fi
+  - julia --code-coverage -e 'Pkg.test("AudioIO")'
+after_success:
+- julia -e 'cd(Pkg.dir("MyPackage")); Pkg.add("Coverage"); using Coverage; Coveralls.submit(Coveralls.process_folder())'
