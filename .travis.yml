@@ -13,6 +13,7 @@ before_install:
   - sudo apt-get install libpcre3-dev julia -y
 script:
   - julia -e 'Pkg.init()'
+  - julia -e 'Pkg.add("BinDeps"); Pkg.checkout("BinDeps") # latest master needed for Pacman support'
   - julia -e 'run(`ln -s $(pwd()) $(Pkg.dir("AudioIO"))`)'
   - julia -e 'Pkg.pin("AudioIO"); Pkg.resolve(); Pkg.build("AudioIO")'
   - julia -e 'Pkg.test("AudioIO", coverage=true)'
