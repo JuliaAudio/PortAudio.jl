@@ -1,4 +1,4 @@
-export af_open, FilePlayer, rewind
+export af_open, FilePlayer, rewind, samplerate
 
 const SFM_READ = int32(0x10)
 const SFM_WRITE = int32(0x20)
@@ -40,6 +40,8 @@ type AudioFile
     filePtr::Ptr{Void}
     sfinfo::SF_INFO
 end
+
+samplerate(f::AudioFile) = f.sfinfo.samplerate
 
 # AudioIO.open is part of the public API, but is not exported so that it
 # doesn't conflict with Base.open

@@ -9,9 +9,9 @@ import AudioIO: DeviceInfo, render, AudioSample, AudioBuf
 facts("WAV file write/read") do
     fname = Pkg.dir("AudioIO", "test", "sinwave.wav")
 
-    samplerate = 44100
+    srate = 44100
     freq = 440
-    t = [0 : 2 * samplerate - 1] / samplerate
+    t = [0 : 2 * srate - 1] / srate
     phase = 2 * pi * freq * t
     reference = int16((2 ^ 15 - 1) * sin(phase))
 
@@ -22,10 +22,11 @@ facts("WAV file write/read") do
     # test basic reading
     AudioIO.open(fname) do f
         @fact f.sfinfo.channels => 1
-        @fact f.sfinfo.frames => 2 * samplerate
+        @fact f.sfinfo.frames => 2 * srate
         actual = read(f)
         @fact length(reference) => length(actual)
         @fact reference => actual[:, 1]
+        @fact samplerate(f) => srate
     end
 
     # test seeking
@@ -35,7 +36,7 @@ facts("WAV file write/read") do
         # pretend we have a stream at the same rate as the file
         bufsize = 1024
         input = zeros(AudioSample, bufsize)
-        test_info = DeviceInfo(samplerate, bufsize)
+        test_info = DeviceInfo(srate, bufsize)
         node = FilePlayer(f)
         # convert to floating point because that's what AudioIO uses natively
         expected = convert(AudioBuf, reference ./ (2^15))
@@ -48,8 +49,8 @@ end
 
 facts("Stereo file reading") do
     fname = Pkg.dir("AudioIO", "test", "440left_880right.wav")
-    samplerate = 44100
-    t = [0 : 2 * samplerate - 1] / samplerate
+    srate = 44100
+    t = [0 : 2 * srate - 1] / srate
     expected = int16((2^15-1) * hcat(sin(2pi*t*440), sin(2pi*t*880)))
 
     AudioIO.open(fname) do f
@@ -62,11 +63,11 @@ end
 # new-fangled stereo sound stuff
 facts("Stereo file rendering") do
     fname = Pkg.dir("AudioIO", "test", "440left_880right.wav")
-    samplerate = 44100
+    srate = 44100
     bufsize = 1024
     input = zeros(AudioSample, bufsize)
-    test_info = DeviceInfo(samplerate, bufsize)
-    t = [0 : 2 * samplerate - 1] / samplerate
+    test_info = DeviceInfo(srate, bufsize)
+    t = [0 : 2 * srate - 1] / srate
     expected = convert(AudioBuf, 0.5 * (sin(2pi*t*440) + sin(2pi*t*880)))
 
     AudioIO.open(fname) do f
