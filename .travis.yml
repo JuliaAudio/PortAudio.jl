@@ -11,11 +11,11 @@ before_install:
   - sudo add-apt-repository ppa:staticfloat/$JULIAVERSION -y
   - sudo apt-get update -qq -y
   - sudo apt-get install libpcre3-dev julia -y
+  - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
 script:
   - julia -e 'Pkg.init()'
   - julia -e 'Pkg.add("BinDeps"); Pkg.checkout("BinDeps")' # latest master needed for Pacman support
-  - julia -e 'run(`ln -s $(pwd()) $(Pkg.dir("AudioIO"))`)'
-  - julia -e 'Pkg.pin("AudioIO"); Pkg.resolve(); Pkg.build("AudioIO")'
+  - julia -e 'Pkg.clone(pwd()); Pkg.build("AudioIO")'
   - julia -e 'Pkg.test("AudioIO", coverage=true)'
 after_success:
 - if [ $JULIAVERSION = "juliareleases" ]; then julia -e 'cd(Pkg.dir("AudioIO")); Pkg.add("Coverage"); using Coverage; Coveralls.submit(Coveralls.process_folder())'; fi
