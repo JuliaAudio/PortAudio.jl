@@ -123,6 +123,13 @@ facts("SinOSC") do
     end
 end
 
+facts("AudioInput") do
+    node = AudioInput()
+    test_data = rand(AudioSample, test_info.buf_size)
+    render_output = render(node, test_data, test_info)
+    @fact render_output => test_data
+end
+
 facts("ArrayPlayer") do
     context("playing long sample") do
         v = rand(AudioSample, 44100)

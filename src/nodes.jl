@@ -266,6 +266,8 @@ end
 
 type InputRenderer <: AudioRenderer
     channel::Int
+    InputRenderer(channel::Integer) = new(channel)
+    InputRenderer() = new(1)
 end
 
 function render(node::InputRenderer, device_input::AudioBuf, info::DeviceInfo)
