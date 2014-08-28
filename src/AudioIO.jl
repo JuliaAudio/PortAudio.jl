@@ -17,8 +17,10 @@ typealias AudioBuf Array{AudioSample}
 abstract AudioRenderer
 
 # A stream of audio (for instance that writes to hardware). All AudioStream
-# subtypes should have a mixer and info field
+# subtypes should have a root and info field
 abstract AudioStream
+samplerate(str::AudioStream) = str.info.sample_rate
+bufsize(str::AudioStream) = str.info.buf_size
 
 # An audio interface is usually a physical sound card, but could
 # be anything you'd want to connect a stream to

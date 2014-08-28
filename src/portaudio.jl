@@ -1,17 +1,25 @@
 typealias PaTime Cdouble
 typealias PaError Cint
 typealias PaSampleFormat Culong
-typealias PaStream Void
+# PaStream is always used as an opaque type, so we're always dealing with the
+# pointer
+typealias PaStream Ptr{Void}
 typealias PaDeviceIndex Cint
 typealias PaHostApiIndex Cint
 typealias PaTime Cdouble
 typealias PaHostApiTypeId Cint
+typealias PaStreamCallback Void
 
 const PA_NO_ERROR = 0
-# expected shim revision, so we can notify if it gets out of sync
-const SHIM_REVISION = 2
-const libportaudio_shim = find_library(["libportaudio_shim",],
-        [Pkg.dir("AudioIO", "deps", "usr", "lib"),])
+const PA_INPUT_OVERFLOWED = -10000 + 19
+const PA_OUTPUT_UNDERFLOWED = -10000 + 20
+
+const paFloat32 = convert(PaSampleFormat, 0x01)
+const paInt32   = convert(PaSampleFormat, 0x02)
+const paInt24   = convert(PaSampleFormat, 0x04)
+const paInt16   = convert(PaSampleFormat, 0x08)
+const paInt8    = convert(PaSampleFormat, 0x10)
+const paUInt8   = convert(PaSampleFormat, 0x20)
 
 # PaHostApiTypeId values
 const pa_host_api_names = {
@@ -39,91 +47,64 @@ portaudio_inited = false
 type PortAudioStream <: AudioStream
     root::AudioMixer
     info::DeviceInfo
+    stream::PaStream
 
-    function PortAudioStream(sample_rate::Int=44100, buf_size::Int=1024)
-        init_portaudio()
+    function PortAudioStream(sample_rate::Integer=44100, buf_size::Integer=1024)
+        require_portaudio_init()
+        stream = Pa_OpenDefaultStream(1, 1, paFloat32, sample_rate, buf_size)
+        Pa_StartStream(stream)
         root = AudioMixer()
-        stream = new(root, DeviceInfo(sample_rate, buf_size))
-        # we need to start up the stream with the portaudio library
-        open_portaudio_stream(stream)
-        return stream
+        this = new(root, DeviceInfo(sample_rate, buf_size), stream)
+        info("Scheduling PortAudio Render Task...")
+        # the task will actually start running the next time the current task yields
+        @schedule(portaudio_task(this))
+        finalizer(this, destroy)
+
+        this
     end
+end
+
+function destroy(stream::PortAudioStream)
+    # in 0.3 we can't print from a finalizer, as STDOUT may have been GC'ed
+    # already and we get a segfault. See
+    # https://github.com/JuliaLang/julia/issues/6075
+    #info("Cleaning up stream")
+    Pa_StopStream(stream.stream)
+    Pa_CloseStream(stream.stream)
+    # we only have 1 stream at a time, so if we're closing out we can just
+    # terminate PortAudio.
+    Pa_Terminate()
+    portaudio_inited = false
 end
 
 ############ Internal Functions ############
 
-function synchronize_buffer(buffer)
-    ccall((:synchronize_buffer, libportaudio_shim), Void, (Ptr{Void},), buffer)
-end
-
-function open_portaudio_stream(stream::PortAudioStream)
-    # starts up a stream with the portaudio library and associates it with the
-    # given AudioIO PortAudioStream
-
-    # TODO: handle more streams
-
-    shim_rev = ccall((:get_shim_revision, libportaudio_shim), Cint, ())
-    if shim_rev != SHIM_REVISION
-        error("Expected shim revision $SHIM_REVISION, got $shim_rev. Run 'make' from AudioIO/deps/src")
-    end
-    fd = ccall((:make_pipe, libportaudio_shim), Cint, ())
-
-    info("Launching PortAudio Task...")
-    schedule(Task(() -> portaudio_task(fd, stream)))
-    # TODO: test not yielding here
-    yield()
-    info("Audio Task Yielded, starting the stream...")
-
-    err = ccall((:open_stream, libportaudio_shim), PaError,
-                (Cuint, Cuint),
-                stream.info.sample_rate, stream.info.buf_size)
-    handle_status(err)
-    info("Portaudio stream started.")
-end
-
-function handle_status(err::PaError)
-    if err != PA_NO_ERROR
-        msg = ccall((:Pa_GetErrorText, libportaudio),
-                    Ptr{Cchar}, (PaError,), err)
-        error("libportaudio: " * bytestring(msg))
-    end
-end
-
-function portaudio_task(jl_filedesc::Integer, stream::PortAudioStream)
-    buffer = zeros(AudioSample, stream.info.buf_size)
-    desc_bytes = Cchar[0]
-    jl_stream = fdio(jl_filedesc)
-    jl_rawfd = RawFD(jl_filedesc)
+function portaudio_task(stream::PortAudioStream)
+    info("PortAudio Render Task Running...")
+    n = bufsize(stream)
+    buffer = zeros(AudioSample, n)
     try
         while true
+            while Pa_GetStreamReadAvailable(stream.stream) < n
+                sleep(0.005)
+            end
+            Pa_ReadStream(stream.stream, buffer, n)
             # assume the root is always active
             rendered = render(stream.root.renderer, buffer, stream.info)::AudioBuf
             for i in 1:length(rendered)
                 buffer[i] = rendered[i]
             end
-            for i in (length(rendered)+1):length(buffer)
+            for i in (length(rendered)+1):n
                 buffer[i] = 0.0
             end
-
-            # wake the C code so it knows we've given it some more data
-            synchronize_buffer(buffer)
-            # wait for new data to be available from the sound card (and for it
-            # to have processed our last frame of data). At some point we
-            # should do something with the data we get from the callback
-            wait(jl_rawfd, readable=true)
-            # read from the file descriptor so that it's empty. We're using
-            # ccall here because readbytes() was blocking the whole julia
-            # thread. This shouldn't block at all because we just waited on it
-            ccall(:read, Clong, (Cint, Ptr{Void}, Culong),
-                  jl_filedesc, desc_bytes, 1)
+            while Pa_GetStreamWriteAvailable(stream.stream) < n
+                sleep(0.005)
+            end
+            Pa_WriteStream(stream.stream, buffer, n)
         end
     catch ex
         warn("Audio Task died with exception: $ex")
         Base.show_backtrace(STDOUT, catch_backtrace())
-    finally
-        # TODO: we need to close the stream here. Otherwise the audio callback
-        # will segfault accessing the output array if there were exceptions
-        # thrown in the render loop
     end
 end
 
@@ -156,32 +137,118 @@ type PortAudioInterface <: AudioInterface
     max_output_channels::Int
 end
 
-# some thin wrappers to portaudio calls
-get_device_info(i) = unsafe_load(ccall((:Pa_GetDeviceInfo, libportaudio),
-                                 Ptr{PaDeviceInfo}, (PaDeviceIndex,), i))
-get_host_api_info(i) = unsafe_load(ccall((:Pa_GetHostApiInfo, libportaudio),
-                                   Ptr{PaHostApiInfo}, (PaHostApiIndex,), i))
-
 function get_portaudio_devices()
-    init_portaudio()
+    require_portaudio_init()
     device_count = ccall((:Pa_GetDeviceCount, libportaudio), PaDeviceIndex, ())
-    pa_devices = [get_device_info(i) for i in 0:(device_count - 1)]
+    pa_devices = [Pa_GetDeviceInfo(i) for i in 0:(device_count - 1)]
     [PortAudioInterface(bytestring(d.name),
-                        bytestring(get_host_api_info(d.host_api).name),
+                        bytestring(Pa_GetHostApiInfo(d.host_api).name),
                         d.max_input_channels,
                         d.max_output_channels)
      for d in pa_devices]
 end
 
-function init_portaudio()
+function require_portaudio_init()
     # can be called multiple times with no effect
     global portaudio_inited
     if !portaudio_inited
-        @assert(libportaudio_shim != "", "Failed to find required library libportaudio_shim. Try re-running the package script using Pkg.build(\"AudioIO\"), then reloading with reload(\"AudioIO\")")
-
         info("Initializing PortAudio. Expect errors as we scan devices")
-        err = ccall((:Pa_Initialize, libportaudio), PaError, ())
-        handle_status(err)
+        Pa_Initialize()
         portaudio_inited = true
+    end
+end
+
+# Low-level wrappers for Portaudio calls
+Pa_GetDeviceInfo(i) = unsafe_load(ccall((:Pa_GetDeviceInfo, libportaudio),
+                                 Ptr{PaDeviceInfo}, (PaDeviceIndex,), i))
+Pa_GetHostApiInfo(i) = unsafe_load(ccall((:Pa_GetHostApiInfo, libportaudio),
+                                   Ptr{PaHostApiInfo}, (PaHostApiIndex,), i))
+
+function Pa_Initialize()
+    err = ccall((:Pa_Initialize, libportaudio), PaError, ())
+    handle_status(err)
+end
+
+function Pa_Terminate()
+    err = ccall((:Pa_Terminate, libportaudio), PaError, ())
+    handle_status(err)
+end
+
+function Pa_StartStream(stream::PaStream)
+    err = ccall((:Pa_StartStream, libportaudio), PaError,
+                (PaStream,), stream)
+    handle_status(err)
+end
+
+function Pa_StopStream(stream::PaStream)
+    err = ccall((:Pa_StopStream, libportaudio), PaError,
+                (PaStream,), stream)
+    handle_status(err)
+end
+
+function Pa_CloseStream(stream::PaStream)
+    err = ccall((:Pa_CloseStream, libportaudio), PaError,
+                (PaStream,), stream)
+    handle_status(err)
+end
+
+function Pa_GetStreamReadAvailable(stream::PaStream)
+    avail = ccall((:Pa_GetStreamReadAvailable, libportaudio), Clong,
+                (PaStream,), stream)
+    avail >= 0 || handle_status(avail)
+    avail
+end
+
+function Pa_GetStreamWriteAvailable(stream::PaStream)
+    avail = ccall((:Pa_GetStreamWriteAvailable, libportaudio), Clong,
+                (PaStream,), stream)
+    avail >= 0 || handle_status(avail)
+    avail
+end
+
+function Pa_ReadStream(stream::PaStream, buf::Array, frames::Integer=length(buf))
+    frames <= length(buf) || error("Need a buffer at least $frames long")
+    err = ccall((:Pa_ReadStream, libportaudio), PaError,
+                (PaStream, Ptr{Void}, Culong),
+                stream, buf, frames)
+    handle_status(err)
+    buf
+end
+
+function Pa_WriteStream(stream::PaStream, buf::Array, frames::Integer=length(buf))
+    frames <= length(buf) || error("Need a buffer at least $frames long")
+    err = ccall((:Pa_WriteStream, libportaudio), PaError,
+                (PaStream, Ptr{Void}, Culong),
+                stream, buf, frames)
+    handle_status(err)
+    nothing
+end
+
+Pa_GetVersion() = ccall((:Pa_GetVersion, libportaudio), Cint, ())
+
+function Pa_OpenDefaultStream(inChannels::Integer, outChannels::Integer,
+                              sampleFormat::PaSampleFormat,
+                              sampleRate::Real, framesPerBuffer::Integer)
+    streamPtr::Array{PaStream} = PaStream[0]
+    err = ccall((:Pa_OpenDefaultStream, libportaudio),
+                PaError, (Ptr{PaStream}, Cint, Cint,
+                          PaSampleFormat, Cdouble, Culong,
+                          Ptr{PaStreamCallback}, Ptr{Void}),
+                streamPtr, inChannels, outChannels, sampleFormat, sampleRate,
+                framesPerBuffer, 0, 0)
+    handle_status(err)
+
+    streamPtr[1]
+end
+
+function handle_status(err::PaError)
+    if err == PA_OUTPUT_UNDERFLOWED || err == PA_INPUT_OVERFLOWED
+        msg = ccall((:Pa_GetErrorText, libportaudio),
+                    Ptr{Cchar}, (PaError,), err)
+        warn("libportaudio: " * bytestring(msg))
+    elseif err != PA_NO_ERROR
+        msg = ccall((:Pa_GetErrorText, libportaudio),
+                    Ptr{Cchar}, (PaError,), err)
+        error("libportaudio: " * bytestring(msg))
     end
 end

@@ -25,6 +25,3 @@ end
 
 @BinDeps.install [:libportaudio => :libportaudio,
                   :libsndfile => :libsndfile]
-
-# cd(Pkg.dir("AudioIO", "deps", "src"))
-# run(`make`)
