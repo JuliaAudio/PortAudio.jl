@@ -8,6 +8,8 @@ typealias PaTime Cdouble
 typealias PaHostApiTypeId Cint
 
 const PA_NO_ERROR = 0
+# expected shim revision, so we can notify if it gets out of sync
+const SHIM_REVISION = 2
 const libportaudio_shim = find_library(["libportaudio_shim",],
         [Pkg.dir("AudioIO", "deps", "usr", "lib"),])
 
@@ -60,6 +62,10 @@ function open_portaudio_stream(stream::PortAudioStream)
 
     # TODO: handle more streams
 
+    shim_rev = ccall((:get_shim_revision, libportaudio_shim), Cint, ())
+    if shim_rev != SHIM_REVISION
+        error("Expected shim revision $SHIM_REVISION, got $shim_rev. Run 'make' from AudioIO/deps/src")
+    end
     fd = ccall((:make_pipe, libportaudio_shim), Cint, ())
 
     info("Launching PortAudio Task...")

@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <unistd.h>
 
+#define SHIM_REVISION 2
+
 int paCallback(const void *inputBuffer, void *outputBuffer,
                unsigned long framesPerBuffer,
                const PaStreamCallbackTimeInfo* timeInfo,
@@ -29,6 +31,11 @@ void synchronize_buffer(void *buffer)
 {
     Buffer = buffer;
     sem_post(&CSemaphore);
+}
+
+int get_shim_revision(void)
+{
+    return SHIM_REVISION;
 }
 
 PaError open_stream(unsigned int sampleRate, unsigned int bufSize)
