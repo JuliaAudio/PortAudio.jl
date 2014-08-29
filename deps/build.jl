@@ -10,8 +10,8 @@ libsndfile = library_dependency("libsndfile")
 # TODO: add other providers with correct names
 provides(AptGet, {"portaudio19-dev" => libportaudio})
 provides(AptGet, {"libsndfile1-dev" => libsndfile})
-provides(Pacman, {"portaudio" => libportaudio})
-provides(Pacman, {"libsndfile" => libsndfile})
+#provides(Pacman, {"portaudio" => libportaudio})
+#provides(Pacman, {"libsndfile" => libsndfile})
 
 
 @osx_only begin

@@ -14,7 +14,6 @@ before_install:
   - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
 script:
   - julia -e 'Pkg.init()'
-  - julia -e 'Pkg.add("BinDeps"); Pkg.checkout("BinDeps")' # latest master needed for Pacman support
   - julia -e 'Pkg.clone(pwd()); Pkg.build("AudioIO")'
   - julia -e 'Pkg.test("AudioIO", coverage=true)'
 after_success:
