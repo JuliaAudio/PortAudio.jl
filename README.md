@@ -1,9 +1,9 @@
 AudioIO.jl
 ==========
 
-[![Build Status](https://travis-ci.org/ssfrr/AudioIO.jl.png?branch=master)](https://travis-ci.org/ssfrr/AudioIO.jl)
+[![Build Status](https://travis-ci.org/ssfrr/AudioIO.jl.svg?branch=master)](https://travis-ci.org/ssfrr/AudioIO.jl)
 [![Pkgs Status](http://pkg.julialang.org/badges/AudioIO_release.svg)](http://pkg.julialang.org/?pkg=AudioIO&ver=release)
-[![Coverage Status](https://coveralls.io/repos/ssfrr/AudioIO.jl/badge.png?branch=master)](https://coveralls.io/r/ssfrr/AudioIO.jl?branch=master)
+[![Coverage Status](https://img.shields.io/coveralls/ssfrr/AudioIO.jl.svg)](https://coveralls.io/r/ssfrr/AudioIO.jl?branch=master)
 
 AudioIO interfaces to audio streams, including real-time recording, audio
 processing, and playback through your sound card using PortAudio. It also
