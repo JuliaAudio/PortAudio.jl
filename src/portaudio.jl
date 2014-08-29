@@ -47,14 +47,18 @@ portaudio_inited = false
 type PortAudioStream <: AudioStream
     root::AudioMixer
     info::DeviceInfo
+    show_warnings::Bool
     stream::PaStream
 
-    function PortAudioStream(sample_rate::Integer=44100, buf_size::Integer=1024)
+    function PortAudioStream(sample_rate::Integer=44100,
+                             buf_size::Integer=1024,
+                             show_warnings::Bool=false)
         require_portaudio_init()
         stream = Pa_OpenDefaultStream(1, 1, paFloat32, sample_rate, buf_size)
         Pa_StartStream(stream)
         root = AudioMixer()
-        this = new(root, DeviceInfo(sample_rate, buf_size), stream)
+        this = new(root, DeviceInfo(sample_rate, buf_size),
+                   show_warnings, stream)
         info("Scheduling PortAudio Render Task...")
         # the task will actually start running the next time the current task yields
         @schedule(portaudio_task(this))
@@ -88,7 +92,7 @@ function portaudio_task(stream::PortAudioStream)
             while Pa_GetStreamReadAvailable(stream.stream) < n
                 sleep(0.005)
             end
-            Pa_ReadStream(stream.stream, buffer, n)
+            Pa_ReadStream(stream.stream, buffer, n, stream.show_warnings)
             # assume the root is always active
             rendered = render(stream.root.renderer, buffer, stream.info)::AudioBuf
             for i in 1:length(rendered)
@@ -100,7 +104,7 @@ function portaudio_task(stream::PortAudioStream)
             while Pa_GetStreamWriteAvailable(stream.stream) < n
                 sleep(0.005)
             end
-            Pa_WriteStream(stream.stream, buffer, n)
+            Pa_WriteStream(stream.stream, buffer, n, stream.show_warnings)
         end
     catch ex
         warn("Audio Task died with exception: $ex")
@@ -206,21 +210,23 @@ function Pa_GetStreamWriteAvailable(stream::PaStream)
     avail
 end
 
-function Pa_ReadStream(stream::PaStream, buf::Array, frames::Integer=length(buf))
+function Pa_ReadStream(stream::PaStream, buf::Array, frames::Integer=length(buf),
+                       show_warnings::Bool=true)
     frames <= length(buf) || error("Need a buffer at least $frames long")
     err = ccall((:Pa_ReadStream, libportaudio), PaError,
                 (PaStream, Ptr{Void}, Culong),
                 stream, buf, frames)
-    handle_status(err)
+    handle_status(err, show_warnings)
     buf
 end
 
-function Pa_WriteStream(stream::PaStream, buf::Array, frames::Integer=length(buf))
+function Pa_WriteStream(stream::PaStream, buf::Array, frames::Integer=length(buf),
+                        show_warnings::Bool=true)
     frames <= length(buf) || error("Need a buffer at least $frames long")
     err = ccall((:Pa_WriteStream, libportaudio), PaError,
                 (PaStream, Ptr{Void}, Culong),
                 stream, buf, frames)
-    handle_status(err)
+    handle_status(err, show_warnings)
     nothing
 end
 
@@ -241,11 +247,13 @@ function Pa_OpenDefaultStream(inChannels::Integer, outChannels::Integer,
     streamPtr[1]
 end
 
-function handle_status(err::PaError)
+function handle_status(err::PaError, show_warnings::Bool=true)
     if err == PA_OUTPUT_UNDERFLOWED || err == PA_INPUT_OVERFLOWED
-        msg = ccall((:Pa_GetErrorText, libportaudio),
-                    Ptr{Cchar}, (PaError,), err)
-        warn("libportaudio: " * bytestring(msg))
+        if show_warnings
+            msg = ccall((:Pa_GetErrorText, libportaudio),
+                        Ptr{Cchar}, (PaError,), err)
+            warn("libportaudio: " * bytestring(msg))
+        end
     elseif err != PA_NO_ERROR
         msg = ccall((:Pa_GetErrorText, libportaudio),
                     Ptr{Cchar}, (PaError,), err)
