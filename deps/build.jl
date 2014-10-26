@@ -22,8 +22,8 @@ end
 
 @windows_only begin
     using WinRPM
-    provides(WinRPM.RPM, "portaudio", libportaudio, os = :Windows)
-    provides(WinRPM.RPM, "libsndfile", libsndfile, os = :Windows)
+    provides(WinRPM.RPM, "libportaudio2", libportaudio, os = :Windows)
+    provides(WinRPM.RPM, "libsndfile1", libsndfile, os = :Windows)
 end
 
 @BinDeps.install [:libportaudio => :libportaudio,
