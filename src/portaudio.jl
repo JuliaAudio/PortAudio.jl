@@ -232,6 +232,11 @@ end
 
 Pa_GetVersion() = ccall((:Pa_GetVersion, libportaudio), Cint, ())
 
+function Pa_GetVersionText()
+    versionPtr = ccall((:Pa_GetVersionText, libportaudio), Ptr{Cchar}, ())
+    bytestring(versionPtr)
+end
+
 function Pa_OpenDefaultStream(inChannels::Integer, outChannels::Integer,
                               sampleFormat::PaSampleFormat,
                               sampleRate::Real, framesPerBuffer::Integer)
