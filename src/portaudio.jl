@@ -1,14 +1,15 @@
 typealias PaTime Cdouble
 typealias PaError Cint
 typealias PaSampleFormat Culong
-# PaStream is always used as an opaque type, so we're always dealing with the
-# pointer
+# PaStream is always used as an opaque type, so we're always dealing 
+# with the pointer
 typealias PaStream Ptr{Void}
 typealias PaDeviceIndex Cint
 typealias PaHostApiIndex Cint
 typealias PaTime Cdouble
 typealias PaHostApiTypeId Cint
 typealias PaStreamCallback Void
+typealias PaStreamFlags Culong
 
 const PA_NO_ERROR = 0
 const PA_INPUT_OVERFLOWED = -10000 + 19
@@ -81,6 +82,90 @@ function destroy(stream::PortAudioStream)
     portaudio_inited = false
 end
 
+type Pa_StreamParameters
+    device::PaDeviceIndex
+    channelCount::Cint
+    sampleFormat::PaSampleFormat
+    suggestedLatency::PaTime
+    hostAPISpecificStreamInfo::Ptr{Void}
+end
+
+function Pa_OpenStream(device::PaDeviceIndex, 
+                       channels::Cint, input::Bool,
+                       sampleFormat::PaSampleFormat,
+                       sampleRate::Cdouble, framesPerBuffer::Culong)
+    #=
+    Open a single stream, not necessarily the default one
+    The stream is unidirectional, either inout or default output
+    see http://portaudio.com/docs/v19-doxydocs/portaudio_8h.html
+    =#
+    streamPtr::Array{PaStream} = PaStream[0]
+    ioParameters = Pa_StreamParameters(device, channels, 
+                                       sampleFormat, PaTime(0.001), 
+                                       Ptr{Void}(0))
+    if input
+        err = ccall((:Pa_OpenStream, libportaudio), PaError, 
+                    (Ptr{PaStream}, Ref{Pa_StreamParameters}, Ptr{Void},
+                    Cdouble, Culong, Culong, 
+                    Ptr{PaStreamCallback}, Ptr{Void}),
+                    streamPtr, ioParameters, Ptr{Void}(0),
+                    sampleRate, framesPerBuffer, 0, 
+                    Ptr{PaStreamCallback}(0), Ptr{Void}(0))
+    else
+        err = ccall((:Pa_OpenStream, libportaudio), PaError, 
+                    (Ptr{PaStream}, Ptr{Void}, Ref{Pa_StreamParameters},
+                    Cdouble, Culong, Culong,
+                    Ptr{PaStreamCallback}, Ptr{Void}),
+                    streamPtr, Ptr{Void}(0), ioParameters,
+                    sampleRate, framesPerBuffer, 0, 
+                    Ptr{PaStreamCallback}(0), Ptr{Void}(0))
+    end             
+    handle_status(err)
+    streamPtr[1]
+end
+
+type Pa_AudioStream <: AudioStream
+    root::AudioMixer
+    info::DeviceInfo
+    show_warnings::Bool
+    stream::PaStream
+    sformat::PaSampleFormat
+    # NOTE: SharedArray is broken under Windows in the initial v0.40
+    # but later development versions may have corrected this
+    # this is only used by the input stream subprocess currently
+    sbuffer::SharedArray
+    parent_working::Bool
+
+    function Pa_AudioStream(device_index, channels=2, input=false,
+                              sample_rate::Integer=44100,
+                              framesPerBuffer::Integer=2048,
+                              show_warnings::Bool=false,
+                              sample_format::PaSampleFormat=paInt16)
+        #= 
+        Get device parameters needed for opening with portaudio
+        default is input as 44100/16bit int, same as CD audio type input
+        =#
+        require_portaudio_init()
+        stream = Pa_OpenStream(device_index, channels, input, sample_format,
+                               Cdouble(sample_rate), Culong(framesPerBuffer))
+        Pa_StartStream(stream)
+        root = AudioMixer()
+        datatype = PaSampleFormat_to_T(sample_format)
+        sbuf = SharedArray(datatype, framesPerBuffer)
+        this = new(root, DeviceInfo(sample_rate, framesPerBuffer), 
+                   show_warnings, stream, sample_format, sbuf, false)
+        info("Scheduling PortAudio Render Task...")
+        # the task will actually start running the next time the current task yields
+        if input
+            @schedule(pa_input_task(this))
+        else
+            @schedule(pa_output_task(this))
+        end
+        this
+    end
+end
+
+
 ############ Internal Functions ############
 
 function portaudio_task(stream::PortAudioStream)
@@ -108,6 +193,74 @@ function portaudio_task(stream::PortAudioStream)
         end
     catch ex
         warn("Audio Task died with exception: $ex")
+        Base.show_backtrace(STDOUT, catch_backtrace())
+    end
+end
+
+function PaSampleFormat_to_T(fmt::PaSampleFormat)
+    #=
+    Helper function to make the right type of buffer for various 
+    sample formats. Converts PaSampleFormat to a typeof
+    =#
+    retval = UInt8(0x0)
+    if fmt == 1
+        retval = Float32(1.0)
+    elseif fmt == 2
+        retval = Int32(0x02)
+    elseif fmt == 4
+        retval = Int24(0x04)
+    elseif fmt == 8
+        retval = Int16(0x08)
+    elseif fmt == 16
+        retval = Int8(0x10)
+    elseif fmt == 32
+        retval = UInt8(0x20)
+    else
+        info("Flawed input to PaSampleFormat_to_primitive")
+    end
+    typeof(retval)
+end
+
+function pa_input_task(stream::Pa_AudioStream)
+    #=
+    Get input device data, pass as SharedArray, no rendering
+    =#
+    info("PortAudio Input Task Running...")
+    n = bufsize(stream)
+    try
+        while true
+            while ((Pa_GetStreamReadAvailable(stream.stream) < n ) |
+                   stream.parent_working)
+                sleep(0.005)
+            end
+            Pa_ReadStream(stream.stream, sdata(stream.sbuffer), n, 
+                          stream.show_warnings)
+            stream.parent_working = true
+            sleep(0.005)
+        end
+    catch ex
+        warn("Audio Input Task died with exception: $ex")
+        Base.show_backtrace(STDOUT, catch_backtrace())
+    end
+end
+
+function pa_output_task(stream::Pa_AudioStream)
+    #=
+    Send output device data, no rendering
+    =#
+    info("PortAudio Output Task Running...")
+    n = bufsize(stream)
+    datatype = PaSampleFormat_to_T(stream.sformat)
+    buffer = zeros(datatype, n)
+    try
+        while true
+            while Pa_GetStreamWriteAvailable(stream.stream) < n
+                sleep(0.005)
+            end
+            Pa_WriteStream(stream.stream, buffer, n, stream.show_warnings)
+        end
+    catch ex
+        warn("Audio Output Task died with exception: $ex")
         Base.show_backtrace(STDOUT, catch_backtrace())
     end
 end
