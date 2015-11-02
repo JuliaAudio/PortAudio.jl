@@ -105,7 +105,7 @@ function Pa_OpenStream(device::PaDeviceIndex,
                                        Ptr{Void}(0))
     if input
         err = ccall((:Pa_OpenStream, libportaudio), PaError, 
-                    (Ptr{PaStream}, Ref{Pa_StreamParameters}, Ptr{Void},
+                    (PaStream, Ref{Pa_StreamParameters}, Ptr{Void},
                     Cdouble, Culong, Culong, 
                     Ptr{PaStreamCallback}, Ptr{Void}),
                     streamPtr, ioParameters, Ptr{Void}(0),
@@ -113,7 +113,7 @@ function Pa_OpenStream(device::PaDeviceIndex,
                     Ptr{PaStreamCallback}(0), Ptr{Void}(0))
     else
         err = ccall((:Pa_OpenStream, libportaudio), PaError, 
-                    (Ptr{PaStream}, Ptr{Void}, Ref{Pa_StreamParameters},
+                    (PaStream, Ptr{Void}, Ref{Pa_StreamParameters},
                     Cdouble, Culong, Culong,
                     Ptr{PaStreamCallback}, Ptr{Void}),
                     streamPtr, Ptr{Void}(0), ioParameters,
@@ -130,11 +130,8 @@ type Pa_AudioStream <: AudioStream
     show_warnings::Bool
     stream::PaStream
     sformat::PaSampleFormat
-    # NOTE: SharedArray is broken under Windows in the initial v0.40
-    # but later development versions may have corrected this
-    # this is only used by the input stream subprocess currently
-    sbuffer::SharedArray
-    parent_working::Bool
+    sbuffer::Array{Real}
+    parent_may_use_buffer::Bool
 
     function Pa_AudioStream(device_index, channels=2, input=false,
                               sample_rate::Integer=44100,
@@ -151,11 +148,10 @@ type Pa_AudioStream <: AudioStream
         Pa_StartStream(stream)
         root = AudioMixer()
         datatype = PaSampleFormat_to_T(sample_format)
-        sbuf = SharedArray(datatype, framesPerBuffer)
+        sbuf = ones(datatype, framesPerBuffer)
         this = new(root, DeviceInfo(sample_rate, framesPerBuffer), 
                    show_warnings, stream, sample_format, sbuf, false)
         info("Scheduling PortAudio Render Task...")
-        # the task will actually start running the next time the current task yields
         if input
             @schedule(pa_input_task(this))
         else
@@ -216,26 +212,34 @@ function PaSampleFormat_to_T(fmt::PaSampleFormat)
     elseif fmt == 32
         retval = UInt8(0x20)
     else
-        info("Flawed input to PaSampleFormat_to_primitive")
+        info("Flawed input to PaSampleFormat_to_T, primitive unknown")
     end
     typeof(retval)
 end
 
-function pa_input_task(stream::Pa_AudioStream)
+function pa_input_task(strm::Pa_AudioStream)
     #=
-    Get input device data, pass as SharedArray, no rendering
+    Get input device data, pass as a producer, no rendering
     =#
     info("PortAudio Input Task Running...")
-    n = bufsize(stream)
+    n = bufsize(strm)
+    datatype = PaSampleFormat_to_T(strm.sformat)
+    # bigger ccall buffer to avoid overflow related errorss
+    buffer = zeros(datatype, n * 8)
     try
         while true
-            while ((Pa_GetStreamReadAvailable(stream.stream) < n ) |
-                   stream.parent_working)
+            while Pa_GetStreamReadAvailable(strm.stream) < n
                 sleep(0.005)
             end
-            Pa_ReadStream(stream.stream, sdata(stream.sbuffer), n, 
-                          stream.show_warnings)
-            stream.parent_working = true
+            while strm.parent_may_use_buffer
+                sleep(0.005)
+            end
+            err = ccall((:Pa_ReadStream, libportaudio), PaError,
+                        (Ptr{PaStream}, Ptr{Void}, Culong),
+                        strm.stream, buffer, n) 
+            handle_status(err, strm.show_warnings)
+            strm.sbuffer[1: n] = buffer[1: n]
+            strm.parent_may_use_buffer = true
             sleep(0.005)
         end
     catch ex
