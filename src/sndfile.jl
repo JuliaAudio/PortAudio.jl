@@ -16,10 +16,10 @@ const SF_SEEK_SET = 0
 const SF_SEEK_CUR = 1
 const SF_SEEK_END = 2
 
-const EXT_TO_FORMAT = [
+@compat const EXT_TO_FORMAT = (
     ".wav" => SF_FORMAT_WAV,
     ".flac" => SF_FORMAT_FLAC
-]
+)
 
 type SF_INFO
     frames::Int64
