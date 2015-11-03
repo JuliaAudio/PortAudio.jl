@@ -1,7 +1,7 @@
 export af_open, FilePlayer, rewind, samplerate
 
-const SFM_READ = int32(0x10)
-const SFM_WRITE = int32(0x20)
+@compat const SFM_READ = Int32(0x10)
+@compat const SFM_WRITE = Int32(0x20)
 
 const SF_FORMAT_WAV =  0x010000
 const SF_FORMAT_FLAC = 0x170000
@@ -45,7 +45,7 @@ samplerate(f::AudioFile) = f.sfinfo.samplerate
 
 # AudioIO.open is part of the public API, but is not exported so that it
 # doesn't conflict with Base.open
-function open(path::String, mode::String = "r",
+@compat function open(path::AbstractString, mode::AbstractString = "r",
             sampleRate::Integer = 44100, channels::Integer = 1,
             format::Integer = 0)
     @assert channels <= 2
@@ -180,7 +180,7 @@ end
 
 typealias FilePlayer AudioNode{FileRenderer}
 FilePlayer(file::AudioFile) = FilePlayer(FileRenderer(file))
-FilePlayer(path::String) = FilePlayer(AudioIO.open(path))
+@compat FilePlayer(path::AbstractString) = FilePlayer(AudioIO.open(path))
 
 function render(node::FileRenderer, device_input::AudioBuf, info::DeviceInfo)
     @assert node.file.sfinfo.samplerate == info.sample_rate
@@ -204,7 +204,7 @@ function render(node::FileRenderer, device_input::AudioBuf, info::DeviceInfo)
     end
 end
 
-function play(filename::String, args...)
+@compat function play(filename::AbstractString, args...)
     player = FilePlayer(filename)
     play(player, args...)
 end
