@@ -1,4 +1,5 @@
 module AudioIO
+using Compat
 
 # export the basic API
 export play, stop, get_audio_devices
