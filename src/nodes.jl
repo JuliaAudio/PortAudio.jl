@@ -13,7 +13,7 @@ end
 
 # Generates a sin tone at the given frequency
 
-type SinOscRenderer{T<:Union(Float32, AudioNode)} <: AudioRenderer
+@compat type SinOscRenderer{T<:Union{Float32, AudioNode}} <: AudioRenderer
     freq::T
     phase::Float32
     buf::AudioBuf
@@ -124,7 +124,7 @@ end
 Base.push!(mixer::AudioMixer, node::AudioNode) = push!(mixer.renderer.inputs, node)
 
 #### Gain ####
-type GainRenderer{T<:Union(Float32, AudioNode)} <: AudioRenderer
+@compat type GainRenderer{T<:Union{Float32, AudioNode}} <: AudioRenderer
     in1::AudioNode
     in2::T
     buf::AudioBuf
