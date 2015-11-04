@@ -228,7 +228,7 @@ function play(arr::AudioBuf, args...)
 end
 
 # If the array is the wrong floating type, convert it
-function play{T <: FloatingPoint}(arr::Array{T}, args...)
+@compat function play{T <: AbstractFloat}(arr::Array{T}, args...)
     arr = convert(AudioBuf, arr)
     play(arr, args...)
 end
