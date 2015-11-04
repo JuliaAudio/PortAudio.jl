@@ -23,7 +23,7 @@ const paInt8    = convert(PaSampleFormat, 0x10)
 const paUInt8   = convert(PaSampleFormat, 0x20)
 
 # PaHostApiTypeId values
-const pa_host_api_names = {
+@compat const pa_host_api_names = (
     0 => "In Development", # use while developing support for a new host API
     1 => "Direct Sound",
     2 => "MME",
@@ -38,7 +38,7 @@ const pa_host_api_names = {
     12 => "Jack",
     13 => "WASAPI",
     14 => "AudioScience HPI"
-}
+)
 
 # track whether we've already inited PortAudio
 portaudio_inited = false
@@ -90,15 +90,15 @@ type Pa_StreamParameters
     hostAPISpecificStreamInfo::Ptr{Void}
 end
 
+"""
+    Open a single stream, not necessarily the default one
+    The stream is unidirectional, either inout or default output
+    see http://portaudio.com/docs/v19-doxydocs/portaudio_8h.html
+"""
 function Pa_OpenStream(device::PaDeviceIndex, 
                        channels::Cint, input::Bool,
                        sampleFormat::PaSampleFormat,
                        sampleRate::Cdouble, framesPerBuffer::Culong)
-    #=
-    Open a single stream, not necessarily the default one
-    The stream is unidirectional, either inout or default output
-    see http://portaudio.com/docs/v19-doxydocs/portaudio_8h.html
-    =#
     streamPtr::Array{PaStream} = PaStream[0]
     ioParameters = Pa_StreamParameters(device, channels, 
                                        sampleFormat, PaTime(0.001), 
@@ -131,17 +131,18 @@ type Pa_AudioStream <: AudioStream
     stream::PaStream
     sformat::PaSampleFormat
     sbuffer::Array{Real}
+    sbuffer_output_waiting::Integer
     parent_may_use_buffer::Bool
 
+    """ 
+        Get device parameters needed for opening with portaudio
+        default is input as 44100/16bit int, same as CD audio type input
+    """
     function Pa_AudioStream(device_index, channels=2, input=false,
                               sample_rate::Integer=44100,
                               framesPerBuffer::Integer=2048,
                               show_warnings::Bool=false,
                               sample_format::PaSampleFormat=paInt16)
-        #= 
-        Get device parameters needed for opening with portaudio
-        default is input as 44100/16bit int, same as CD audio type input
-        =#
         require_portaudio_init()
         stream = Pa_OpenStream(device_index, channels, input, sample_format,
                                Cdouble(sample_rate), Culong(framesPerBuffer))
@@ -150,7 +151,7 @@ type Pa_AudioStream <: AudioStream
         datatype = PaSampleFormat_to_T(sample_format)
         sbuf = ones(datatype, framesPerBuffer)
         this = new(root, DeviceInfo(sample_rate, framesPerBuffer), 
-                   show_warnings, stream, sample_format, sbuf, false)
+                   show_warnings, stream, sample_format, sbuf, 0, false)
         info("Scheduling PortAudio Render Task...")
         if input
             @schedule(pa_input_task(this))
@@ -161,6 +162,45 @@ type Pa_AudioStream <: AudioStream
     end
 end
 
+"""
+Blocking read from a Pa_AudioStream that is open as input
+"""
+function read_Pa_AudioStream(stream::Pa_AudioStream)
+    while true
+        while stream.parent_may_use_buffer == false
+            sleep(0.001)
+        end
+        buffer = deepcopy(stream.sbuffer)       
+        stream.parent_may_use_buffer = false
+        return buffer
+     end
+end
+
+"""
+Blocking write to a Pa_AudioStream that is open for output
+"""
+function write_Pa_AudioStream(stream::Pa_AudioStream, buffer)
+    retval = 1
+    sbufsize = length(stream.sbuffer)
+    inputlen = length(buffer)
+    if(inputlen > sbufsize)
+        info("Overflow at write_Pa_AudioStream")
+        retval = 0
+    elseif(inputlen < sbufsize)
+        info("Underflow at write_Pa_AudioStream")
+        retval = -1
+    end
+    while true
+        while stream.parent_may_use_buffer == false
+            sleep(0.001)
+        end
+        for idx in 1:min(sbufsize, inputlen)
+            stream.sbuffer[idx] = buffer[idx]
+        end
+        stream.parent_may_use_buffer = false
+    end
+    retval
+end
 
 ############ Internal Functions ############
 
@@ -193,11 +233,11 @@ function portaudio_task(stream::PortAudioStream)
     end
 end
 
-function PaSampleFormat_to_T(fmt::PaSampleFormat)
-    #=
+"""
     Helper function to make the right type of buffer for various 
     sample formats. Converts PaSampleFormat to a typeof
-    =#
+"""
+function PaSampleFormat_to_T(fmt::PaSampleFormat)
     retval = UInt8(0x0)
     if fmt == 1
         retval = Float32(1.0)
@@ -217,29 +257,29 @@ function PaSampleFormat_to_T(fmt::PaSampleFormat)
     typeof(retval)
 end
 
-function pa_input_task(strm::Pa_AudioStream)
-    #=
+"""
     Get input device data, pass as a producer, no rendering
-    =#
+"""
+function pa_input_task(stream::Pa_AudioStream)
     info("PortAudio Input Task Running...")
-    n = bufsize(strm)
-    datatype = PaSampleFormat_to_T(strm.sformat)
-    # bigger ccall buffer to avoid overflow related errorss
+    n = bufsize(stream)
+    datatype = PaSampleFormat_to_T(stream.sformat)
+    # bigger ccall buffer to avoid overflow related errors
     buffer = zeros(datatype, n * 8)
     try
         while true
-            while Pa_GetStreamReadAvailable(strm.stream) < n
+            while Pa_GetStreamReadAvailable(stream.stream) < n
                 sleep(0.005)
             end
-            while strm.parent_may_use_buffer
+            while stream.parent_may_use_buffer
                 sleep(0.005)
             end
             err = ccall((:Pa_ReadStream, libportaudio), PaError,
-                        (Ptr{PaStream}, Ptr{Void}, Culong),
-                        strm.stream, buffer, n) 
-            handle_status(err, strm.show_warnings)
-            strm.sbuffer[1: n] = buffer[1: n]
-            strm.parent_may_use_buffer = true
+                        (PaStream, Ptr{Void}, Culong),
+                        stream.stream, buffer, n) 
+            handle_status(err, stream.show_warnings)
+            stream.sbuffer[1: n] = buffer[1: n]
+            stream.parent_may_use_buffer = true
             sleep(0.005)
         end
     catch ex
@@ -248,20 +288,27 @@ function pa_input_task(strm::Pa_AudioStream)
     end
 end
 
-function pa_output_task(stream::Pa_AudioStream)
-    #=
+"""
     Send output device data, no rendering
-    =#
+"""
+function pa_output_task(stream::Pa_AudioStream)
     info("PortAudio Output Task Running...")
     n = bufsize(stream)
-    datatype = PaSampleFormat_to_T(stream.sformat)
-    buffer = zeros(datatype, n)
     try
         while true
-            while Pa_GetStreamWriteAvailable(stream.stream) < n
-                sleep(0.005)
+            navail = stream.sbuffer_output_waiting
+            if navail > n
+                info("Possible output buffer overflow in stream")
+                navail = n
             end
-            Pa_WriteStream(stream.stream, buffer, n, stream.show_warnings)
+            if (navail > 1) & (stream.parent_may_use_buffer == false) &
+               (Pa_GetStreamWriteAvailable(stream.stream) < navail)
+                Pa_WriteStream(stream.stream, stream.sbuffer, 
+                               navail, stream.show_warnings)
+                stream.parent_may_use_buffer = true
+            else
+                sleep(0.005)
+            end            
         end
     catch ex
         warn("Audio Output Task died with exception: $ex")
@@ -291,21 +338,23 @@ type PaHostApiInfo
     defaultOutputDevice::PaDeviceIndex
 end
 
-type PortAudioInterface <: AudioInterface
-    name::String
-    host_api::String
+@compat type PortAudioInterface <: AudioInterface
+    name::AbstractString
+    host_api::AbstractString
     max_input_channels::Int
     max_output_channels::Int
+    device_index::PaDeviceIndex
 end
 
 function get_portaudio_devices()
     require_portaudio_init()
     device_count = ccall((:Pa_GetDeviceCount, libportaudio), PaDeviceIndex, ())
-    pa_devices = [Pa_GetDeviceInfo(i) for i in 0:(device_count - 1)]
-    [PortAudioInterface(bytestring(d.name),
-                        bytestring(Pa_GetHostApiInfo(d.host_api).name),
-                        d.max_input_channels,
-                        d.max_output_channels)
+    pa_devices = [ [Pa_GetDeviceInfo(i), i] for i in 0:(device_count - 1)]
+    [PortAudioInterface(bytestring(d[1].name),
+                        bytestring(Pa_GetHostApiInfo(d[1].host_api).name),
+                        d[1].max_input_channels,
+                        d[1].max_output_channels,
+                        d[2])
      for d in pa_devices]
 end
 
