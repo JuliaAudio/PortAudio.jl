@@ -1,5 +1,6 @@
 module AudioIO
 using Compat
+importall Base.Operators
 
 # export the basic API
 export play, stop, get_audio_devices
