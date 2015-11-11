@@ -16,7 +16,7 @@ const SF_SEEK_SET = 0
 const SF_SEEK_CUR = 1
 const SF_SEEK_END = 2
 
-@compat const EXT_TO_FORMAT = (
+@compat const EXT_TO_FORMAT = Dict(
     ".wav" => SF_FORMAT_WAV,
     ".flac" => SF_FORMAT_FLAC
 )
@@ -28,12 +28,6 @@ type SF_INFO
     format::Int32
     sections::Int32
     seekable::Int32
-
-    function SF_INFO(frames::Integer, samplerate::Integer, channels::Integer,
-                     format::Integer, sections::Integer, seekable::Integer)
-        new(int64(frames), int32(samplerate), int32(channels), int32(format),
-            int32(sections), int32(seekable))
-    end
 end
 
 type AudioFile
@@ -45,7 +39,7 @@ samplerate(f::AudioFile) = f.sfinfo.samplerate
 
 # AudioIO.open is part of the public API, but is not exported so that it
 # doesn't conflict with Base.open
-@compat function open(path::AbstractString, mode::AbstractString = "r",
+function open(path::AbstractString, mode::AbstractString = "r",
             sampleRate::Integer = 44100, channels::Integer = 1,
             format::Integer = 0)
     @assert channels <= 2
@@ -66,11 +60,11 @@ samplerate(f::AudioFile) = f.sfinfo.samplerate
     end
 
     filePtr = ccall((:sf_open, libsndfile), Ptr{Void},
-                    (Ptr{Uint8}, Int32, Ptr{SF_INFO}),
+                    (Ptr{UInt8}, Int32, Ptr{SF_INFO}),
                     path, file_mode, &sfinfo)
 
     if filePtr == C_NULL
-        errmsg = ccall((:sf_strerror, libsndfile), Ptr{Uint8}, (Ptr{Void},), filePtr)
+        errmsg = ccall((:sf_strerror, libsndfile), Ptr{UInt8}, (Ptr{Void},), filePtr)
         error(bytestring(errmsg))
     end
 
@@ -132,7 +126,7 @@ Base.read(file::AudioFile) = Base.read(file, Int16)
 
 function Base.write{T}(file::AudioFile, frames::Array{T})
     @assert file.sfinfo.channels <= 2
-    nframes = int(length(frames) / file.sfinfo.channels)
+    nframes = round(Int, length(frames) / file.sfinfo.channels)
 
     if T == Int16
         return ccall((:sf_writef_short, libsndfile), Int64,
@@ -180,7 +174,7 @@ end
 
 typealias FilePlayer AudioNode{FileRenderer}
 FilePlayer(file::AudioFile) = FilePlayer(FileRenderer(file))
-@compat FilePlayer(path::AbstractString) = FilePlayer(AudioIO.open(path))
+FilePlayer(path::AbstractString) = FilePlayer(AudioIO.open(path))
 
 function render(node::FileRenderer, device_input::AudioBuf, info::DeviceInfo)
     @assert node.file.sfinfo.samplerate == info.sample_rate
@@ -204,7 +198,7 @@ function render(node::FileRenderer, device_input::AudioBuf, info::DeviceInfo)
     end
 end
 
-@compat function play(filename::AbstractString, args...)
+function play(filename::AbstractString, args...)
     player = FilePlayer(filename)
     play(player, args...)
 end

@@ -1,6 +1,7 @@
 module TestAudioIO
 
 using FactCheck
+using Compat
 using AudioIO
 import AudioIO.AudioBuf
 
@@ -43,32 +44,32 @@ facts("Array playback") do
         f32 = convert(Array{Float32}, sin(phase))
         test_stream = TestAudioStream()
         player = play(f32, test_stream)
-        @fact process(test_stream) => f32[1:TEST_BUF_SIZE]
+        @fact process(test_stream) --> f32[1:TEST_BUF_SIZE]
     end
 
     context("Playing Float64 arrays") do
         f64 = convert(Array{Float64}, sin(phase))
         test_stream = TestAudioStream()
         player = play(f64, test_stream)
-        @fact process(test_stream) => convert(AudioBuf, f64[1:TEST_BUF_SIZE])
+        @fact process(test_stream) --> convert(AudioBuf, f64[1:TEST_BUF_SIZE])
     end
 
     context("Playing Int8(Signed) arrays") do
-        i8 = Int8[-127:127]
+        i8 = Int8[-127:127;]
         test_stream = TestAudioStream()
         player = play(i8, test_stream)
-        @fact process(test_stream)[1:255] =>
-                mse(convert(AudioBuf, linspace(-1.0, 1.0, 255)))
+        @fact process(test_stream)[1:255] -->
+                mse(convert(AudioBuf, collect(linspace(-1.0, 1.0, 255))))
     end
 
-    context("Playing Uint8(Unsigned) arrays") do
+    context("Playing UInt8(Unsigned) arrays") do
         # for unsigned 8-bit audio silence is represented as 128, so the symmetric range
         # is 1-255
-        ui8 = Uint8[1:255]
+        ui8 = UInt8[1:255;]
         test_stream = TestAudioStream()
         player = play(ui8, test_stream)
-        @fact process(test_stream)[1:255] =>
-                mse(convert(AudioBuf, linspace(-1.0, 1.0, 255)))
+        @fact process(test_stream)[1:255] -->
+                mse(convert(AudioBuf, collect(linspace(-1.0, 1.0, 255))))
    end
 end
 
@@ -78,12 +79,12 @@ facts("AudioNode Stopping") do
     play(node, test_stream)
     process(test_stream)
     stop(node)
-    @fact process(test_stream) => zeros(AudioIO.AudioSample, TEST_BUF_SIZE)
+    @fact process(test_stream) --> zeros(AudioIO.AudioSample, TEST_BUF_SIZE)
 end
 
 facts("Audio Device Listing") do
     # there aren't any devices on the Travis machine so just test that this doesn't crash
-    @fact get_audio_devices() => issubtype(Array)
+    @fact get_audio_devices() --> issubtype(Array)
 end
 
 end # module TestAudioIO

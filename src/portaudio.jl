@@ -1,7 +1,7 @@
 typealias PaTime Cdouble
 typealias PaError Cint
 typealias PaSampleFormat Culong
-# PaStream is always used as an opaque type, so we're always dealing 
+# PaStream is always used as an opaque type, so we're always dealing
 # with the pointer
 typealias PaStream Ptr{Void}
 typealias PaDeviceIndex Cint
@@ -23,7 +23,7 @@ const paInt8    = convert(PaSampleFormat, 0x10)
 const paUInt8   = convert(PaSampleFormat, 0x20)
 
 # PaHostApiTypeId values
-@compat const pa_host_api_names = (
+@compat const pa_host_api_names = Dict(
     0 => "In Development", # use while developing support for a new host API
     1 => "Direct Sound",
     2 => "MME",
@@ -95,31 +95,31 @@ end
     The stream is unidirectional, either inout or default output
     see http://portaudio.com/docs/v19-doxydocs/portaudio_8h.html
 """
-function Pa_OpenStream(device::PaDeviceIndex, 
+function Pa_OpenStream(device::PaDeviceIndex,
                        channels::Cint, input::Bool,
                        sampleFormat::PaSampleFormat,
                        sampleRate::Cdouble, framesPerBuffer::Culong)
     streamPtr::Array{PaStream} = PaStream[0]
-    ioParameters = Pa_StreamParameters(device, channels, 
-                                       sampleFormat, PaTime(0.001), 
+    ioParameters = Pa_StreamParameters(device, channels,
+                                       sampleFormat, PaTime(0.001),
                                        Ptr{Void}(0))
     if input
-        err = ccall((:Pa_OpenStream, libportaudio), PaError, 
+        err = ccall((:Pa_OpenStream, libportaudio), PaError,
                     (PaStream, Ref{Pa_StreamParameters}, Ptr{Void},
-                    Cdouble, Culong, Culong, 
+                    Cdouble, Culong, Culong,
                     Ptr{PaStreamCallback}, Ptr{Void}),
                     streamPtr, ioParameters, Ptr{Void}(0),
-                    sampleRate, framesPerBuffer, 0, 
+                    sampleRate, framesPerBuffer, 0,
                     Ptr{PaStreamCallback}(0), Ptr{Void}(0))
     else
-        err = ccall((:Pa_OpenStream, libportaudio), PaError, 
+        err = ccall((:Pa_OpenStream, libportaudio), PaError,
                     (PaStream, Ptr{Void}, Ref{Pa_StreamParameters},
                     Cdouble, Culong, Culong,
                     Ptr{PaStreamCallback}, Ptr{Void}),
                     streamPtr, Ptr{Void}(0), ioParameters,
-                    sampleRate, framesPerBuffer, 0, 
+                    sampleRate, framesPerBuffer, 0,
                     Ptr{PaStreamCallback}(0), Ptr{Void}(0))
-    end             
+    end
     handle_status(err)
     streamPtr[1]
 end
@@ -134,7 +134,7 @@ type Pa_AudioStream <: AudioStream
     sbuffer_output_waiting::Integer
     parent_may_use_buffer::Bool
 
-    """ 
+    """
         Get device parameters needed for opening with portaudio
         default is input as 44100/16bit int, same as CD audio type input
     """
@@ -150,7 +150,7 @@ type Pa_AudioStream <: AudioStream
         root = AudioMixer()
         datatype = PaSampleFormat_to_T(sample_format)
         sbuf = ones(datatype, framesPerBuffer)
-        this = new(root, DeviceInfo(sample_rate, framesPerBuffer), 
+        this = new(root, DeviceInfo(sample_rate, framesPerBuffer),
                    show_warnings, stream, sample_format, sbuf, 0, false)
         info("Scheduling PortAudio Render Task...")
         if input
@@ -170,7 +170,7 @@ function read_Pa_AudioStream(stream::Pa_AudioStream)
         while stream.parent_may_use_buffer == false
             sleep(0.001)
         end
-        buffer = deepcopy(stream.sbuffer)       
+        buffer = deepcopy(stream.sbuffer)
         stream.parent_may_use_buffer = false
         return buffer
      end
@@ -234,7 +234,7 @@ function portaudio_task(stream::PortAudioStream)
 end
 
 """
-    Helper function to make the right type of buffer for various 
+    Helper function to make the right type of buffer for various
     sample formats. Converts PaSampleFormat to a typeof
 """
 function PaSampleFormat_to_T(fmt::PaSampleFormat)
@@ -276,7 +276,7 @@ function pa_input_task(stream::Pa_AudioStream)
             end
             err = ccall((:Pa_ReadStream, libportaudio), PaError,
                         (PaStream, Ptr{Void}, Culong),
-                        stream.stream, buffer, n) 
+                        stream.stream, buffer, n)
             handle_status(err, stream.show_warnings)
             stream.sbuffer[1: n] = buffer[1: n]
             stream.parent_may_use_buffer = true
@@ -303,12 +303,12 @@ function pa_output_task(stream::Pa_AudioStream)
             end
             if (navail > 1) & (stream.parent_may_use_buffer == false) &
                (Pa_GetStreamWriteAvailable(stream.stream) < navail)
-                Pa_WriteStream(stream.stream, stream.sbuffer, 
+                Pa_WriteStream(stream.stream, stream.sbuffer,
                                navail, stream.show_warnings)
                 stream.parent_may_use_buffer = true
             else
                 sleep(0.005)
-            end            
+            end
         end
     catch ex
         warn("Audio Output Task died with exception: $ex")
@@ -338,7 +338,7 @@ type PaHostApiInfo
     defaultOutputDevice::PaDeviceIndex
 end
 
-@compat type PortAudioInterface <: AudioInterface
+type PortAudioInterface <: AudioInterface
     name::AbstractString
     host_api::AbstractString
     max_input_channels::Int

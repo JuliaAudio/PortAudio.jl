@@ -1,21 +1,21 @@
-language: cpp
+language: julia
 compiler:
   - clang
 notifications:
   email: spencer.f.russell@gmail.com
-env:
-    - JULIAVERSION="julianightlies"
-    - JULIAVERSION="juliareleases"
-before_install:
-  - sudo add-apt-repository ppa:staticfloat/julia-deps -y
-  - sudo add-apt-repository ppa:staticfloat/$JULIAVERSION -y
-  - sudo apt-get update -qq -y
-  - sudo apt-get install libpcre3-dev julia -y
-  - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
+julia:
+  - 0.3
+  - 0.4
+#  - nightly
+# Fails with:
+# LoadError: ccall: could not find function jl_read_sonames
+# while loading /home/travis/.julia/v0.5/AudioIO/deps/build.jl, in expression starting on line 29
 script:
+  - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
   - julia -e 'Pkg.init()'
   - julia -e 'Pkg.add("BinDeps"); Pkg.checkout("BinDeps")' # latest master needed for Pacman support
   - julia -e 'Pkg.clone(pwd()); Pkg.build("AudioIO")'
-  - julia -e 'Pkg.test("AudioIO", coverage=true)'
+  - julia -e 'Pkg.add("FactCheck")' # add FactCheck manually because we're not using Pkg.test()
+  - julia --code-coverage=user test/runtests.jl # Pkg.test disables inlining when enabling coverage, which kills our allocation tests
 after_success:
 - if [ $JULIAVERSION = "juliareleases" ]; then julia -e 'cd(Pkg.dir("AudioIO")); Pkg.add("Coverage"); using Coverage; Coveralls.submit(Coveralls.process_folder())'; fi
