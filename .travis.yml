@@ -1,21 +1,18 @@
+# Documentation: http://docs.travis-ci.com/user/languages/julia/
 language: julia
-compiler:
-  - clang
-notifications:
-  email: spencer.f.russell@gmail.com
+os:
+  - linux
+  - osx
 julia:
-  - 0.3
+  # - release
   - 0.4
-#  - nightly
-# Fails with:
-# LoadError: ccall: could not find function jl_read_sonames
-# while loading /home/travis/.julia/v0.5/AudioIO/deps/build.jl, in expression starting on line 29
+  - nightly
+notifications:
+  email: false
 script:
-  - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
-  - julia -e 'Pkg.init()'
-  - julia -e 'Pkg.add("BinDeps"); Pkg.checkout("BinDeps")' # latest master needed for Pacman support
-  - julia -e 'Pkg.clone(pwd()); Pkg.build("AudioIO")'
-  - julia -e 'Pkg.add("FactCheck")' # add FactCheck manually because we're not using Pkg.test()
-  - julia --code-coverage=user test/runtests.jl # Pkg.test disables inlining when enabling coverage, which kills our allocation tests
+ # SampleTypes is unregistered so clone it for testing
+ - julia -e 'Pkg.clone("https://github.com/JuliaAudio/SampleTypes.jl.git")'
+ - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
+ - julia -e 'Pkg.clone(pwd()); Pkg.build("PortAudio"); Pkg.test("PortAudio"; coverage=true)'
 after_success:
-- if [ $JULIAVERSION = "juliareleases" ]; then julia -e 'cd(Pkg.dir("AudioIO")); Pkg.add("Coverage"); using Coverage; Coveralls.submit(Coveralls.process_folder())'; fi
+  - julia -e 'cd(Pkg.dir("PortAudio")); Pkg.add("Coverage"); using Coverage; Codecov.submit(process_folder())'
