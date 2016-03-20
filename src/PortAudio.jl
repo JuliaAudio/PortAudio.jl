@@ -11,6 +11,8 @@ include("libportaudio.jl")
 
 export PortAudioSink, PortAudioSource
 
+const DEFAULT_BUFSIZE=4096
+
 # initialize PortAudio on module load
 Pa_Initialize()
 
@@ -40,21 +42,21 @@ type PortAudioSink{T, U} <: SampleSink
     nchannels::Int
     samplerate::U
     bufsize::Int
-    ringbuf::RingBuffer
-    open::Bool
-    task::Task
+    buffer::Array{T, 2}
+    transbuf::Array{T, 2}
 
     function PortAudioSink(eltype, rate, channels, bufsize)
         stream = Pa_OpenDefaultStream(0, channels, type_to_fmt[eltype], float(rate), bufsize)
         writers = Condition[]
-        # we want the ringbuf to output zeros to portaudio if it runs out of samples
-        ringbuf = RingBuffer(eltype, RINGBUF_FRAMES, channels; underflow=PAD)
+        buffer = Array(eltype, bufsize, channels)
+        # as of portaudio 19.20140130 (which is the HomeBrew version as of 20160319)
+        # noninterleaved data is not supported for the read/write interface on OSX
+        transbuf = Array(eltype, channels, bufsize)
+
         Pa_StartStream(stream)
 
-        this = new(stream, channels, rate, bufsize, ringbuf, true)
-        this.task = @schedule sinktask(this)
+        this = new(stream, channels, rate, bufsize, buffer, transbuf)
         finalizer(this, close)
-        yield()
 
         this
     end
@@ -64,13 +66,7 @@ PortAudioSink(eltype=Float32, rate=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE)
     PortAudioSink{eltype, typeof(rate)}(eltype, rate, channels, bufsize)
 
 
-const DEFAULT_BUFSIZE=4096
-const RINGBUF_FRAMES = 131072
-
 function Base.close(sink::PortAudioSink)
-    sink.open = false
-    # no task switches inside finalizer, not sure if we'll need this or not
-    # wait(sink.task)
     Pa_StopStream(sink.stream)
     Pa_CloseStream(sink.stream)
 end
@@ -85,35 +81,24 @@ Base.eltype{T, U}(sink::PortAudioSink{T, U}) = T
 # end
 
 function SampleTypes.unsafe_write(sink::PortAudioSink, buf::SampleBuf)
-    write(sink.ringbuf, buf)
+    total = nframes(buf)
+    written = 0
+    while written < total
+        n = min(size(sink.transbuf, 2), total-written, Pa_GetStreamWriteAvailable(sink.stream))
+        bufstart = 1+written
+        bufend = n+written
+        @devec sink.buffer[1:n, :] = buf[bufstart:bufend, :]
+        transpose!(sink.transbuf, sink.buffer)
+        Pa_WriteStream(sink.stream, sink.transbuf, n, false)
+        written += n
+        sleep(0.005)
+    end
+
+    written
 end
 
 # function SampleTypes.unsafe_read!(sink::PortAudioSource, buf::SampleBuf)
 # end
-
-function sinktask(sink::PortAudioSink)
-    buffer = Array(eltype(sink), sink.bufsize, nchannels(sink))
-    # as of portaudio 19.20140130 (which is the HomeBrew version as of 20160319)
-    # noninterleaved data is not supported for the read/write interface on OSX
-    transbuf = Array(eltype(sink), nchannels(sink), sink.bufsize)
-    try
-        while sink.open
-            total = Pa_GetStreamWriteAvailable(sink.stream)
-            written = 0
-            while(written < total)
-                tocopy = min(size(buffer, 1), total - written)
-                read!(sink.ringbuf, sub(buffer, 1:tocopy, :))
-                transpose!(transbuf, buffer)
-                Pa_WriteStream(sink.stream, transbuf, tocopy, true)
-                written += tocopy
-            end
-            sleep(0.005)
-        end
-    catch ex
-        warn("PortAudio Sink Task died with exception: $ex")
-        Base.show_backtrace(STDOUT, catch_backtrace())
-    end
-end
 
 # function sourcetask(sink::PortAudioSource)
 #     while sink.open
