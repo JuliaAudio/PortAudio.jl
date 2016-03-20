@@ -92,8 +92,10 @@ end
 # end
 
 function sinktask(sink::PortAudioSink)
-    println("starting sink task")
     buffer = Array(eltype(sink), sink.bufsize, nchannels(sink))
+    # as of portaudio 19.20140130 (which is the HomeBrew version as of 20160319)
+    # noninterleaved data is not supported for the read/write interface on OSX
+    transbuf = Array(eltype(sink), nchannels(sink), sink.bufsize)
     try
         while sink.open
             total = Pa_GetStreamWriteAvailable(sink.stream)
@@ -101,8 +103,8 @@ function sinktask(sink::PortAudioSink)
             while(written < total)
                 tocopy = min(size(buffer, 1), total - written)
                 read!(sink.ringbuf, sub(buffer, 1:tocopy, :))
-                # TODO: this will only work for mono streams
-                Pa_WriteStream(sink.stream, buffer, tocopy, true)
+                transpose!(transbuf, buffer)
+                Pa_WriteStream(sink.stream, transbuf, tocopy, true)
                 written += tocopy
             end
             sleep(0.005)
@@ -111,7 +113,6 @@ function sinktask(sink::PortAudioSink)
         warn("PortAudio Sink Task died with exception: $ex")
         Base.show_backtrace(STDOUT, catch_backtrace())
     end
-    println("sink task finished")
 end
 
 # function sourcetask(sink::PortAudioSource)

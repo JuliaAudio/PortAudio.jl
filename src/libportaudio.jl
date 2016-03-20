@@ -27,35 +27,14 @@ const paInt8    = PaSampleFormat(0x10)
 const paUInt8   = PaSampleFormat(0x20)
 const paNonInterleaved = PaSampleFormat(0x80000000)
 
-const fmt_to_type = Dict{PaSampleFormat, Type}(
-    1  => Float32,
-    2  => Int32,
-    # 4  => Int24,
-    8  => Int16,
-    16 => Int8,
-    32 => UInt8
-)
-
-# const type_to_fmt = Dict{Type, PaSampleFormat}(
-#     Float32 => 1 | paNonInterleaved,
-#     Int32   => 2 | paNonInterleaved,
-#     # Int24   => 4 | paNonInterleaved,
-#     Int16   => 8 | paNonInterleaved,
-#     Int8    => 16 | paNonInterleaved,
-#     UInt8   => 3 | paNonInterleaved
-# )
-#
-
-# TODO: temporary for testing mono
 const type_to_fmt = Dict{Type, PaSampleFormat}(
     Float32 => 1,
     Int32   => 2,
-    # Int24   =>,
+    # Int24   => 4,
     Int16   => 8,
     Int8    => 16,
     UInt8   => 3
 )
-
 
 function Pa_Initialize()
     err = ccall((:Pa_Initialize, libportaudio), PaError, ())
