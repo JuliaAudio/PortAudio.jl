@@ -8,7 +8,7 @@ ENV["JULIA_ROOT"] = abspath(JULIA_HOME, "../../")
 libportaudio = library_dependency("libportaudio")
 
 # TODO: add other providers with correct names
-provides(AptGet, "portaudio19-dev", libportaudio)
+provides(AptGet, "libportaudio2", libportaudio)
 provides(Pacman, "portaudio", libportaudio)
 
 

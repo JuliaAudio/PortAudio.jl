@@ -1,9 +1,7 @@
 module PortAudio
+
 using SampleTypes
-using Compat
-using FixedPointNumbers
 using Devectorize
-using RingBuffers
 
 # Get binary dependencies loaded from BinDeps
 include( "../deps/deps.jl")
