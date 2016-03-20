@@ -121,6 +121,13 @@ type Pa_StreamParameters
     hostAPISpecificStreamInfo::Ptr{Void}
 end
 
+type PaStreamInfo
+    structVersion::Cint
+    inputLatency::PaTime
+    outputLatency::PaTime
+    sampleRate::Cdouble
+end
+
 function Pa_OpenDefaultStream(inChannels, outChannels,
                               sampleFormat::PaSampleFormat,
                               sampleRate, framesPerBuffer)
@@ -204,6 +211,13 @@ function Pa_WriteStream(stream::PaStream, buf::Array, frames::Integer=length(buf
                 stream, buf, frames)
     handle_status(err, show_warnings)
     nothing
+end
+
+function Pa_GetStreamInfo(stream::PaStream)
+    infoptr = ccall((:Pa_GetStreamInfo, libportaudio), Ptr{PaStreamInfo},
+            (PaStream, ), stream)
+
+    unsafe_load(infoptr)
 end
 
 # General utility function to handle the status from the Pa_* functions

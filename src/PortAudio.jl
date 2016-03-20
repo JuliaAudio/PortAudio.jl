@@ -35,11 +35,17 @@ function devices()
      for (i, d) in enumerate(infos)]
 end
 
-# paramaterized on the sample type and sampling rate type
+# not for external use, used in error message printing
+devnames() = join(["\"$(dev.name)\"" for dev in devices()], "\n")
+
+# Sources and sinks are mostly the same, so define them with this handy bit of
+# metaprogramming
 for (TypeName, Super) in ((:PortAudioSink, :SampleSink),
                           (:PortAudioSource, :SampleSource))
+# paramaterized on the sample type and sampling rate type
     @eval type $TypeName{T, U} <: $Super
         stream::PaStream
+        name::UTF8String
         samplerate::U
         jlbuf::Array{T, 2}
         pabuf::Array{T, 2}
@@ -47,7 +53,7 @@ for (TypeName, Super) in ((:PortAudioSink, :SampleSink),
         busy::Bool
     end
 
-    @eval function $TypeName(T, stream, sr, channels, bufsize)
+    @eval function $TypeName(T, stream, sr, channels, bufsize, name)
         jlbuf = Array(T, bufsize, channels)
         # as of portaudio 19.20140130 (which is the HomeBrew version as of 20160319)
         # noninterleaved data is not supported for the read/write interface on OSX
@@ -57,7 +63,7 @@ for (TypeName, Super) in ((:PortAudioSink, :SampleSink),
 
         Pa_StartStream(stream)
 
-        this = $TypeName(stream, sr, jlbuf, pabuf, waiters, false)
+        this = $TypeName(stream, utf8(name), sr, jlbuf, pabuf, waiters, false)
         finalizer(this, close)
 
         this
@@ -66,13 +72,13 @@ end
 
 function PortAudioSink(eltype=Float32, sr=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE)
     stream = Pa_OpenDefaultStream(0, channels, type_to_fmt[eltype], float(sr), bufsize)
-    PortAudioSink(eltype, stream, sr, channels, bufsize)
+    PortAudioSink(eltype, stream, sr, channels, bufsize, "Default Sink")
 end
 
 function PortAudioSink(device::PortAudioDevice, eltype=Float32, sr=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE)
     params = Pa_StreamParameters(device.idx, channels, type_to_fmt[eltype], 0.0, C_NULL)
     stream = Pa_OpenStream(C_NULL, pointer_from_objref(params), float(sr), bufsize, paNoFlag)
-    PortAudioSink(eltype, stream, sr, channels, bufsize)
+    PortAudioSink(eltype, stream, sr, channels, bufsize, device.name)
 end
 
 function PortAudioSink(devname::AbstractString, args...)
@@ -81,17 +87,18 @@ function PortAudioSink(devname::AbstractString, args...)
             return PortAudioSink(d, args...)
         end
     end
+    error("No PortAudio device matching \"$devname\" found.\nAvailable Devices:\n$(devnames())")
 end
 
 function PortAudioSource(eltype=Float32, sr=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE)
     stream = Pa_OpenDefaultStream(channels, 0, type_to_fmt[eltype], float(sr), bufsize)
-    PortAudioSource(eltype, stream, sr, channels, bufsize)
+    PortAudioSource(eltype, stream, sr, channels, bufsize, "Default Source")
 end
 
 function PortAudioSource(device::PortAudioDevice, eltype=Float32, sr=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE)
     params = Pa_StreamParameters(device.idx, channels, type_to_fmt[eltype], 0.0, C_NULL)
     stream = Pa_OpenStream(pointer_from_objref(params), C_NULL, float(sr), bufsize, paNoFlag)
-    PortAudioSource(eltype, stream, sr, channels, bufsize)
+    PortAudioSource(eltype, stream, sr, channels, bufsize, device.name)
 end
 
 function PortAudioSource(devname::AbstractString, args...)
@@ -100,12 +107,19 @@ function PortAudioSource(devname::AbstractString, args...)
             return PortAudioSource(d, args...)
         end
     end
+    error("No PortAudio device matching \"$devname\" found.\nAvailable Devices:\n$(devnames())")
 end
+
 
 
 # most of these methods are the same for Sources and Sinks, so define them on
 # the union
 typealias PortAudioStream{T, U} Union{PortAudioSink{T, U}, PortAudioSource{T, U}}
+
+function Base.show{T <: PortAudioStream}(io::IO, stream::T)
+    println(io, T, "(\"", stream.name, "\")")
+    print(io, nchannels(stream), " channels sampled at ", samplerate(stream))
+end
 
 function Base.close(stream::PortAudioStream)
     Pa_StopStream(stream.stream)
