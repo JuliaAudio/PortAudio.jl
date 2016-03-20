@@ -93,24 +93,28 @@ function SampleTypes.unsafe_write(sink::PortAudioSink, buf::SampleBuf)
         shift!(sink.waiters)
     end
 
-    sink.busy = true
     total = nframes(buf)
     written = 0
+    try
+        sink.busy = true
 
-    while written < total
-        n = min(size(sink.pabuf, 2), total-written, Pa_GetStreamWriteAvailable(sink.stream))
-        bufstart = 1+written
-        bufend = n+written
-        @devec sink.jlbuf[1:n, :] = buf[bufstart:bufend, :]
-        transpose!(sink.pabuf, sink.jlbuf)
-        Pa_WriteStream(sink.stream, sink.pabuf, n, false)
-        written += n
-        sleep(POLL_SECONDS)
-    end
-    sink.busy = false
-    if length(sink.waiters) > 0
-        # let the next task in line go
-        notify(sink.waiters[1])
+        while written < total
+            n = min(size(sink.pabuf, 2), total-written, Pa_GetStreamWriteAvailable(sink.stream))
+            bufstart = 1+written
+            bufend = n+written
+            @devec sink.jlbuf[1:n, :] = buf[bufstart:bufend, :]
+            transpose!(sink.pabuf, sink.jlbuf)
+            Pa_WriteStream(sink.stream, sink.pabuf, n, false)
+            written += n
+            sleep(POLL_SECONDS)
+        end
+    finally
+        # make sure we release the busy flag even if the user ctrl-C'ed out
+        sink.busy = false
+        if length(sink.waiters) > 0
+            # let the next task in line go
+            notify(sink.waiters[1])
+        end
     end
 
     written
@@ -124,26 +128,29 @@ function SampleTypes.unsafe_read!(source::PortAudioSource, buf::SampleBuf)
         shift!(source.waiters)
     end
 
-    source.busy = true
-
     total = nframes(buf)
     read = 0
 
-    while read < total
-        n = min(size(source.pabuf, 2), total-read, Pa_GetStreamReadAvailable(source.stream))
-        Pa_ReadStream(source.stream, source.pabuf, n, false)
-        transpose!(source.jlbuf, source.pabuf)
-        bufstart = 1+read
-        bufend = n+read
-        @devec buf[bufstart:bufend, :] = source.jlbuf[1:n, :]
-        read += n
-        sleep(POLL_SECONDS)
-    end
+    try
+        source.busy = true
 
-    source.busy = false
-    if length(source.waiters) > 0
-        # let the next task in line go
-        notify(source.waiters[1])
+        while read < total
+            n = min(size(source.pabuf, 2), total-read, Pa_GetStreamReadAvailable(source.stream))
+            Pa_ReadStream(source.stream, source.pabuf, n, false)
+            transpose!(source.jlbuf, source.pabuf)
+            bufstart = 1+read
+            bufend = n+read
+            @devec buf[bufstart:bufend, :] = source.jlbuf[1:n, :]
+            read += n
+            sleep(POLL_SECONDS)
+        end
+
+    finally
+        source.busy = false
+        if length(source.waiters) > 0
+            # let the next task in line go
+            notify(source.waiters[1])
+        end
     end
 
     read
