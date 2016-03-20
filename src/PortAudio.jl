@@ -37,50 +37,52 @@ function devices()
 end
 
 # paramaterized on the sample type and sampling rate type
-type PortAudioSink{T, U} <: SampleSink
-    stream::PaStream
-    nchannels::Int
-    samplerate::U
-    bufsize::Int
-    buffer::Array{T, 2}
-    transbuf::Array{T, 2}
-    waiters::Vector{Condition}
-    busy::Bool
+for (TypeName, Super, inchansymb, outchansymb) in
+            ((:PortAudioSink, :SampleSink, 0, :channels),
+             (:PortAudioSource, :SampleSource, :channels, 0))
+    @eval type $TypeName{T, U} <: $Super
+        stream::PaStream
+        nchannels::Int
+        samplerate::U
+        bufsize::Int
+        jlbuf::Array{T, 2}
+        pabuf::Array{T, 2}
+        waiters::Vector{Condition}
+        busy::Bool
 
-    function PortAudioSink(eltype, rate, channels, bufsize)
-        stream = Pa_OpenDefaultStream(0, channels, type_to_fmt[eltype], float(rate), bufsize)
-        buffer = Array(eltype, bufsize, channels)
-        # as of portaudio 19.20140130 (which is the HomeBrew version as of 20160319)
-        # noninterleaved data is not supported for the read/write interface on OSX
-        transbuf = Array(eltype, channels, bufsize)
-        waiters = Condition[]
+        function $TypeName(eltype, rate, channels, bufsize)
+            stream = Pa_OpenDefaultStream($inchansymb, $outchansymb, type_to_fmt[eltype], float(rate), bufsize)
+            jlbuf = Array(eltype, bufsize, channels)
+            # as of portaudio 19.20140130 (which is the HomeBrew version as of 20160319)
+            # noninterleaved data is not supported for the read/write interface on OSX
+            pabuf = Array(eltype, channels, bufsize)
+            waiters = Condition[]
 
-        Pa_StartStream(stream)
+            Pa_StartStream(stream)
 
-        this = new(stream, channels, rate, bufsize, buffer, transbuf, waiters, false)
-        finalizer(this, close)
+            this = new(stream, channels, rate, bufsize, jlbuf, pabuf, waiters, false)
+            finalizer(this, close)
 
-        this
+            this
+        end
     end
+
+    @eval $TypeName(eltype=Float32, rate=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE) =
+        $TypeName{eltype, typeof(rate)}(eltype, rate, channels, bufsize)
 end
 
-PortAudioSink(eltype=Float32, rate=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE) =
-    PortAudioSink{eltype, typeof(rate)}(eltype, rate, channels, bufsize)
+# most of these methods are the same for Sources and Sinks, so define them on
+# the union
+typealias PortAudioStream{T, U} Union{PortAudioSink{T, U}, PortAudioSource{T, U}}
 
-
-function Base.close(sink::PortAudioSink)
-    Pa_StopStream(sink.stream)
-    Pa_CloseStream(sink.stream)
+function Base.close(stream::PortAudioStream)
+    Pa_StopStream(stream.stream)
+    Pa_CloseStream(stream.stream)
 end
 
-
-SampleTypes.nchannels(sink::PortAudioSink) = sink.nchannels
-SampleTypes.samplerate(sink::PortAudioSink) = sink.samplerate
-Base.eltype{T, U}(sink::PortAudioSink{T, U}) = T
-
-# type PortAudioSource <: SampleSource
-#     stream::PaStream
-# end
+SampleTypes.nchannels(stream::PortAudioStream) = stream.nchannels
+SampleTypes.samplerate(stream::PortAudioStream) = stream.samplerate
+Base.eltype{T, U}(::PortAudioStream{T, U}) = T
 
 function SampleTypes.unsafe_write(sink::PortAudioSink, buf::SampleBuf)
     if sink.busy
@@ -95,12 +97,12 @@ function SampleTypes.unsafe_write(sink::PortAudioSink, buf::SampleBuf)
     written = 0
 
     while written < total
-        n = min(size(sink.transbuf, 2), total-written, Pa_GetStreamWriteAvailable(sink.stream))
+        n = min(size(sink.pabuf, 2), total-written, Pa_GetStreamWriteAvailable(sink.stream))
         bufstart = 1+written
         bufend = n+written
-        @devec sink.buffer[1:n, :] = buf[bufstart:bufend, :]
-        transpose!(sink.transbuf, sink.buffer)
-        Pa_WriteStream(sink.stream, sink.transbuf, n, false)
+        @devec sink.jlbuf[1:n, :] = buf[bufstart:bufend, :]
+        transpose!(sink.pabuf, sink.jlbuf)
+        Pa_WriteStream(sink.stream, sink.pabuf, n, false)
         written += n
         sleep(0.005)
     end
@@ -113,30 +115,39 @@ function SampleTypes.unsafe_write(sink::PortAudioSink, buf::SampleBuf)
     written
 end
 
-# function SampleTypes.unsafe_read!(sink::PortAudioSource, buf::SampleBuf)
-# end
+function SampleTypes.unsafe_read!(source::PortAudioSource, buf::SampleBuf)
+    if source.busy
+        c = Condition()
+        push!(source.waiters, c)
+        wait(c)
+        shift!(source.waiters)
+    end
 
-# function sourcetask(sink::PortAudioSource)
-#     while sink.open
-#     end
-#
-#             while Pa_GetStreamReadAvailable(stream.stream) < n
-#                 sleep(0.005)
-#             end
-#             Pa_ReadStream(stream.stream, buffer, n, stream.show_warnings)
-#             # assume the root is always active
-#             rendered = render(stream.root.renderer, buffer, stream.info)::AudioBuf
-#             for i in 1:length(rendered)
-#                 buffer[i] = rendered[i]
-#             end
-#             for i in (length(rendered)+1):n
-#                 buffer[i] = 0.0
-#             end
-#             while Pa_GetStreamWriteAvailable(stream.stream) < n
-#                 sleep(0.005)
-#             end
-#             Pa_WriteStream(stream.stream, buffer, n, stream.show_warnings)
-# end
+    source.busy = true
+
+    total = nframes(buf)
+    read = 0
+
+    while read < total
+        n = min(size(source.pabuf, 2), total-read, Pa_GetStreamReadAvailable(source.stream))
+        Pa_ReadStream(source.stream, source.pabuf, n, false)
+        transpose!(source.jlbuf, source.pabuf)
+        bufstart = 1+read
+        bufend = n+read
+        @devec buf[bufstart:bufend, :] = source.jlbuf[1:n, :]
+        read += n
+        sleep(0.005)
+    end
+
+    source.busy = false
+    if length(source.waiters) > 0
+        # let the next task in line go
+        notify(source.waiters[1])
+    end
+
+    read
+end
+
 
 
 
