@@ -55,7 +55,7 @@ write(sink, source)
 ### Record 10 seconds of audio and save to an ogg file
 
 ```julia
-julia> using FileIO, SampleTypes, LibSndFile
+julia> using PortAudio, FileIO, SampleTypes, LibSndFile
 
 julia> source = PortAudioSource("Built-in Microph")
 PortAudio.PortAudioSource{Float32,SIUnits.SIQuantity{Int64,0,0,-1,0,0,0,0,0,0}}("Built-in Microph")
