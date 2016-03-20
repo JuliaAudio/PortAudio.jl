@@ -75,6 +75,14 @@ function PortAudioSink(device::PortAudioDevice, eltype=Float32, sr=48000Hz, chan
     PortAudioSink(eltype, stream, sr, channels, bufsize)
 end
 
+function PortAudioSink(devname::AbstractString, args...)
+    for d in devices()
+        if d.name == devname
+            return PortAudioSink(d, args...)
+        end
+    end
+end
+
 function PortAudioSource(eltype=Float32, sr=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE)
     stream = Pa_OpenDefaultStream(channels, 0, type_to_fmt[eltype], float(sr), bufsize)
     PortAudioSource(eltype, stream, sr, channels, bufsize)
@@ -84,6 +92,14 @@ function PortAudioSource(device::PortAudioDevice, eltype=Float32, sr=48000Hz, ch
     params = Pa_StreamParameters(device.idx, channels, type_to_fmt[eltype], 0.0, C_NULL)
     stream = Pa_OpenStream(pointer_from_objref(params), C_NULL, float(sr), bufsize, paNoFlag)
     PortAudioSource(eltype, stream, sr, channels, bufsize)
+end
+
+function PortAudioSource(devname::AbstractString, args...)
+    for d in devices()
+        if d.name == devname
+            return PortAudioSource(d, args...)
+        end
+    end
 end
 
 
