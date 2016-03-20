@@ -1,6 +1,6 @@
 #!/usr/bin/env julia
 
-@testset "No Tests" begin
+@testset "PortAudio Tests" begin
     @test false
 end
 
