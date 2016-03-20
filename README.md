@@ -8,14 +8,14 @@ PortAudio.jl is a wrapper for [libportaudio](http://www.portaudio.com/), which g
 The easiest way to open a source or sink is with the default `PortAudioSource()` and `PortAudioSink()` constructors, which will open a 2-channel stream to your system's default devices. The constructors also take a variety of positional arguments:
 
 ```julia
-function PortAudioSink(eltype=Float32, sr=48000Hz, channels=2, bufsize=4096)
+PortAudioSink(eltype=Float32, sr=48000Hz, channels=2, bufsize=4096)
 ```
 
 You can open a specific device by adding it as the first argument, either as a `PortAudioDevice` instance or by name.
 
 ```julia
-function PortAudioSink(device::PortAudioDevice, args...)
-function PortAudioSink(devname::AbstractString, args...)
+PortAudioSink(device::PortAudioDevice, args...)
+PortAudioSink(devname::AbstractString, args...)
 ```
 
 You can get a list of your system's devices with the `PortAudio.devices()` function:
@@ -33,7 +33,7 @@ julia> PortAudio.devices()
 
 ## Reading and Writing
 
-`PortAudioSource` and `PortAudioSink` are subtypes of `SampleSource` and `SampleSink`, respectively (from [SampleTypes.jl](https://github.com/JuliaAudio/SampleTypes.jl)). This means they support all the stream and buffer features defined there. You can read to a buffer with `buf = read(source)`
+`PortAudioSource` and `PortAudioSink` are subtypes of `SampleSource` and `SampleSink`, respectively (from [SampleTypes.jl](https://github.com/JuliaAudio/SampleTypes.jl)). This means they support all the stream and buffer features defined there. For example, if you load SampleTypes with `using SampleTypes` you can read 5 seconds to a buffer with `buf = read(source, 5s)`, regardless of the sample rate of the device.
 
 ## Examples
 
