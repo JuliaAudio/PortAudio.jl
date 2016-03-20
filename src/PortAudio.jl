@@ -23,16 +23,17 @@ type PortAudioDevice
     idx::PaDeviceIndex
 end
 
+PortAudioDevice(info::PaDeviceInfo, idx) = PortAudioDevice(
+        bytestring(info.name),
+        bytestring(Pa_GetHostApiInfo(info.host_api).name),
+        info.max_input_channels,
+        info.max_output_channels,
+        idx)
+
 function devices()
     ndevices = Pa_GetDeviceCount()
     infos = PaDeviceInfo[Pa_GetDeviceInfo(i) for i in 0:(ndevices - 1)]
-
-    [PortAudioDevice(bytestring(d.name),
-                        bytestring(Pa_GetHostApiInfo(d.host_api).name),
-                        d.max_input_channels,
-                        d.max_output_channels,
-                        i-1)
-     for (i, d) in enumerate(infos)]
+    PortAudioDevice[PortAudioDevice(info, idx) for (idx, info) in enumerate(infos)]
 end
 
 # not for external use, used in error message printing
@@ -70,11 +71,6 @@ for (TypeName, Super) in ((:PortAudioSink, :SampleSink),
     end
 end
 
-function PortAudioSink(eltype=Float32, sr=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE)
-    stream = Pa_OpenDefaultStream(0, channels, type_to_fmt[eltype], float(sr), bufsize)
-    PortAudioSink(eltype, stream, sr, channels, bufsize, "Default Sink")
-end
-
 function PortAudioSink(device::PortAudioDevice, eltype=Float32, sr=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE)
     params = Pa_StreamParameters(device.idx, channels, type_to_fmt[eltype], 0.0, C_NULL)
     stream = Pa_OpenStream(C_NULL, pointer_from_objref(params), float(sr), bufsize, paNoFlag)
@@ -90,10 +86,12 @@ function PortAudioSink(devname::AbstractString, args...)
     error("No PortAudio device matching \"$devname\" found.\nAvailable Devices:\n$(devnames())")
 end
 
-function PortAudioSource(eltype=Float32, sr=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE)
-    stream = Pa_OpenDefaultStream(channels, 0, type_to_fmt[eltype], float(sr), bufsize)
-    PortAudioSource(eltype, stream, sr, channels, bufsize, "Default Source")
+function PortAudioSink(args...)
+    idx = Pa_GetDefaultOutputDevice()
+    device = PortAudioDevice(Pa_GetDeviceInfo(idx), idx)
+    PortAudioSink(device, args...)
 end
+
 
 function PortAudioSource(device::PortAudioDevice, eltype=Float32, sr=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE)
     params = Pa_StreamParameters(device.idx, channels, type_to_fmt[eltype], 0.0, C_NULL)
@@ -108,6 +106,12 @@ function PortAudioSource(devname::AbstractString, args...)
         end
     end
     error("No PortAudio device matching \"$devname\" found.\nAvailable Devices:\n$(devnames())")
+end
+
+function PortAudioSource(args...)
+    idx = Pa_GetDefaultInputDevice()
+    device = PortAudioDevice(Pa_GetDeviceInfo(idx), idx)
+    PortAudioSource(device, args...)
 end
 
 

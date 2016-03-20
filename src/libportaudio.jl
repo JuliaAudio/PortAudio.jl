@@ -111,6 +111,12 @@ Pa_GetDeviceCount() = ccall((:Pa_GetDeviceCount, libportaudio), PaDeviceIndex, (
 Pa_GetDeviceInfo(i) = unsafe_load(ccall((:Pa_GetDeviceInfo, libportaudio),
                                  Ptr{PaDeviceInfo}, (PaDeviceIndex,), i))
 
+Pa_GetDefaultInputDevice() = ccall((:Pa_GetDefaultInputDevice, libportaudio),
+                                   PaDeviceIndex, ())
+
+Pa_GetDefaultOutputDevice() = ccall((:Pa_GetDefaultOutputDevice, libportaudio),
+                                    PaDeviceIndex, ())
+
 # Stream Functions
 
 type Pa_StreamParameters
