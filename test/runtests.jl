@@ -1,9 +1,11 @@
 #!/usr/bin/env julia
 
 using BaseTestNext
+using PortAudio
 
-@testset "PortAudio Tests" begin
-    @test false
+println("DEVICES FOUND:")
+for d in PortAudio.devices()
+    println(d)
 end
 
 exit(0)
