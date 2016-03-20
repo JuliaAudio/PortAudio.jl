@@ -62,7 +62,7 @@ end
 # all the host APIs on the system by iterating through those values.
 
 # PaHostApiTypeId values
-@compat const pa_host_api_names = Dict{PaHostApiTypeId, ASCIIString}(
+const pa_host_api_names = Dict{PaHostApiTypeId, ASCIIString}(
     0 => "In Development", # use while developing support for a new host API
     1 => "Direct Sound",
     2 => "MME",

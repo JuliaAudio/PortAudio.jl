@@ -36,38 +36,42 @@ function devices()
 end
 
 # paramaterized on the sample type and sampling rate type
-for (TypeName, Super, inchansymb, outchansymb) in
-            ((:PortAudioSink, :SampleSink, 0, :channels),
-             (:PortAudioSource, :SampleSource, :channels, 0))
+for (TypeName, Super) in ((:PortAudioSink, :SampleSink),
+                          (:PortAudioSource, :SampleSource))
     @eval type $TypeName{T, U} <: $Super
         stream::PaStream
-        nchannels::Int
         samplerate::U
-        bufsize::Int
         jlbuf::Array{T, 2}
         pabuf::Array{T, 2}
         waiters::Vector{Condition}
         busy::Bool
-
-        function $TypeName(eltype, rate, channels, bufsize)
-            stream = Pa_OpenDefaultStream($inchansymb, $outchansymb, type_to_fmt[eltype], float(rate), bufsize)
-            jlbuf = Array(eltype, bufsize, channels)
-            # as of portaudio 19.20140130 (which is the HomeBrew version as of 20160319)
-            # noninterleaved data is not supported for the read/write interface on OSX
-            pabuf = Array(eltype, channels, bufsize)
-            waiters = Condition[]
-
-            Pa_StartStream(stream)
-
-            this = new(stream, channels, rate, bufsize, jlbuf, pabuf, waiters, false)
-            finalizer(this, close)
-
-            this
-        end
     end
 
-    @eval $TypeName(eltype=Float32, rate=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE) =
-        $TypeName{eltype, typeof(rate)}(eltype, rate, channels, bufsize)
+    @eval function $TypeName(T, stream, sr, channels, bufsize)
+        jlbuf = Array(T, bufsize, channels)
+        # as of portaudio 19.20140130 (which is the HomeBrew version as of 20160319)
+        # noninterleaved data is not supported for the read/write interface on OSX
+        # so we need to use another buffer to interleave (transpose)
+        pabuf = Array(T, channels, bufsize)
+        waiters = Condition[]
+
+        Pa_StartStream(stream)
+
+        this = $TypeName(stream, sr, jlbuf, pabuf, waiters, false)
+        finalizer(this, close)
+
+        this
+    end
+end
+
+function PortAudioSink(eltype=Float32, sr=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE)
+    stream = Pa_OpenDefaultStream(0, channels, type_to_fmt[eltype], float(sr), bufsize)
+    PortAudioSink(eltype, stream, sr, channels, bufsize)
+end
+
+function PortAudioSource(eltype=Float32, sr=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE)
+    stream = Pa_OpenDefaultStream(channels, 0, type_to_fmt[eltype], float(sr), bufsize)
+    PortAudioSource(eltype, stream, sr, channels, bufsize)
 end
 
 # most of these methods are the same for Sources and Sinks, so define them on
@@ -79,7 +83,7 @@ function Base.close(stream::PortAudioStream)
     Pa_CloseStream(stream.stream)
 end
 
-SampleTypes.nchannels(stream::PortAudioStream) = stream.nchannels
+SampleTypes.nchannels(stream::PortAudioStream) = size(stream.jlbuf, 2)
 SampleTypes.samplerate(stream::PortAudioStream) = stream.samplerate
 Base.eltype{T, U}(::PortAudioStream{T, U}) = T
 
