@@ -134,21 +134,21 @@ type PaStreamInfo
     sampleRate::Cdouble
 end
 
-function Pa_OpenDefaultStream(inChannels, outChannels,
-                              sampleFormat::PaSampleFormat,
-                              sampleRate, framesPerBuffer)
-    streamPtr = Ref{PaStream}(0)
-    err = ccall((:Pa_OpenDefaultStream, libportaudio),
-                PaError, (Ref{PaStream}, Cint, Cint,
-                          PaSampleFormat, Cdouble, Culong,
-                          Ref{Void}, Ref{Void}),
-                streamPtr, inChannels, outChannels, sampleFormat, sampleRate,
-                framesPerBuffer, C_NULL, C_NULL)
-    handle_status(err)
-
-    streamPtr[]
-end
-
+# function Pa_OpenDefaultStream(inChannels, outChannels,
+#                               sampleFormat::PaSampleFormat,
+#                               sampleRate, framesPerBuffer)
+#     streamPtr = Ref{PaStream}(0)
+#     err = ccall((:Pa_OpenDefaultStream, libportaudio),
+#                 PaError, (Ref{PaStream}, Cint, Cint,
+#                           PaSampleFormat, Cdouble, Culong,
+#                           Ref{Void}, Ref{Void}),
+#                 streamPtr, inChannels, outChannels, sampleFormat, sampleRate,
+#                 framesPerBuffer, C_NULL, C_NULL)
+#     handle_status(err)
+#
+#     streamPtr[]
+# end
+#
 function Pa_OpenStream(inParams, outParams,
                        sampleRate, framesPerBuffer,
                        flags::PaStreamFlags)
@@ -219,13 +219,13 @@ function Pa_WriteStream(stream::PaStream, buf::Array, frames::Integer=length(buf
     nothing
 end
 
-function Pa_GetStreamInfo(stream::PaStream)
-    infoptr = ccall((:Pa_GetStreamInfo, libportaudio), Ptr{PaStreamInfo},
-            (PaStream, ), stream)
-
-    unsafe_load(infoptr)
-end
-
+# function Pa_GetStreamInfo(stream::PaStream)
+#     infoptr = ccall((:Pa_GetStreamInfo, libportaudio), Ptr{PaStreamInfo},
+#             (PaStream, ), stream)
+#
+#     unsafe_load(infoptr)
+# end
+#
 # General utility function to handle the status from the Pa_* functions
 function handle_status(err::PaError, show_warnings::Bool=true)
     if err == PA_OUTPUT_UNDERFLOWED || err == PA_INPUT_OVERFLOWED

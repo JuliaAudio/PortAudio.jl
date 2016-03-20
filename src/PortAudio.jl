@@ -15,6 +15,11 @@ const POLL_SECONDS=0.005
 # initialize PortAudio on module load
 Pa_Initialize()
 
+function versioninfo(io::IO=STDOUT)
+    println(io, Pa_GetVersionText())
+    println(io, "Version Number: ", Pa_GetVersion())
+end
+
 type PortAudioDevice
     name::UTF8String
     hostapi::UTF8String
@@ -33,7 +38,7 @@ PortAudioDevice(info::PaDeviceInfo, idx) = PortAudioDevice(
 function devices()
     ndevices = Pa_GetDeviceCount()
     infos = PaDeviceInfo[Pa_GetDeviceInfo(i) for i in 0:(ndevices - 1)]
-    PortAudioDevice[PortAudioDevice(info, idx) for (idx, info) in enumerate(infos)]
+    PortAudioDevice[PortAudioDevice(info, idx-1) for (idx, info) in enumerate(infos)]
 end
 
 # not for external use, used in error message printing
@@ -126,8 +131,11 @@ function Base.show{T <: PortAudioStream}(io::IO, stream::T)
 end
 
 function Base.close(stream::PortAudioStream)
-    Pa_StopStream(stream.stream)
-    Pa_CloseStream(stream.stream)
+    if stream.stream != C_NULL
+        Pa_StopStream(stream.stream)
+        Pa_CloseStream(stream.stream)
+        stream.stream = C_NULL
+    end
 end
 
 SampleTypes.nchannels(stream::PortAudioStream) = size(stream.jlbuf, 2)

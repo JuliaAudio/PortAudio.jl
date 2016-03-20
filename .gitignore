@@ -5,3 +5,4 @@ deps/deps.jl
 *.wav
 *.flac
 *.cov
+coverage
