@@ -1,5 +1,9 @@
 # Thanks to Jiahao Chen for this great example!
 
+##
+## NOTE: THIS NEEDS TO BE PORTED OVER TO THE NEW ARCHITECTURE
+##
+
 using AudioIO
 import AudioIO.play
 
@@ -129,10 +133,10 @@ soprano = @async parsevoice("""
 f'#.4 f'#. g'. a'. a'. g'. f'#. e'. d'. d'. e'. f'#. e'.~ e' d'8 d'4~ d'2
 """, lyrics="Wir be- tre- ten feu- er- trun- ken, Himm- li- sche, dein Hei- - lig- thum!")
 alto = @async parsevoice("""
-a.4 a. b. c'. c'. b. a. g. f#. f#. g. f#. g.~ g4 f#8 f#~ f#2 
+a.4 a. b. c'. c'. b. a. g. f#. f#. g. f#. g.~ g4 f#8 f#~ f#2
 """)
 tenor = @async parsevoice("""
-d.4 d. d. d. d. d. d. d. d. d. c#. d. c#.~ c# d8 d d2  
+d.4 d. d. d. d. d. d. d. d. d. c#. d. c#.~ c# d8 d d2
 """)
 bass = @async parsevoice("""
 d.4 d. d. d. a,. a,. a,. a., a., a., a., a., a.,~ a, a,8 d, d,2
