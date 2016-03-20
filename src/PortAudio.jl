@@ -17,10 +17,10 @@ Pa_Initialize()
 
 type PortAudioDevice
     name::UTF8String
-    host_api::UTF8String
-    max_input_channels::Int
-    max_output_channels::Int
-    device_index::PaDeviceIndex
+    hostapi::UTF8String
+    maxinchans::Int
+    maxoutchans::Int
+    idx::PaDeviceIndex
 end
 
 function devices()
@@ -69,10 +69,23 @@ function PortAudioSink(eltype=Float32, sr=48000Hz, channels=2, bufsize=DEFAULT_B
     PortAudioSink(eltype, stream, sr, channels, bufsize)
 end
 
+function PortAudioSink(device::PortAudioDevice, eltype=Float32, sr=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE)
+    params = Pa_StreamParameters(device.idx, channels, type_to_fmt[eltype], 0.0, C_NULL)
+    stream = Pa_OpenStream(C_NULL, pointer_from_objref(params), float(sr), bufsize, paNoFlag)
+    PortAudioSink(eltype, stream, sr, channels, bufsize)
+end
+
 function PortAudioSource(eltype=Float32, sr=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE)
     stream = Pa_OpenDefaultStream(channels, 0, type_to_fmt[eltype], float(sr), bufsize)
     PortAudioSource(eltype, stream, sr, channels, bufsize)
 end
+
+function PortAudioSource(device::PortAudioDevice, eltype=Float32, sr=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE)
+    params = Pa_StreamParameters(device.idx, channels, type_to_fmt[eltype], 0.0, C_NULL)
+    stream = Pa_OpenStream(pointer_from_objref(params), C_NULL, float(sr), bufsize, paNoFlag)
+    PortAudioSource(eltype, stream, sr, channels, bufsize)
+end
+
 
 # most of these methods are the same for Sources and Sinks, so define them on
 # the union

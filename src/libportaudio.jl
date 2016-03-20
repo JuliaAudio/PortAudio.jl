@@ -13,7 +13,7 @@ typealias PaStream Ptr{Void}
 typealias PaStreamCallback Void
 typealias PaStreamFlags Culong
 
-
+const paNoFlag = PaStreamFlags(0x00)
 
 const PA_NO_ERROR = 0
 const PA_INPUT_OVERFLOWED = -10000 + 19
@@ -136,18 +136,18 @@ function Pa_OpenDefaultStream(inChannels, outChannels,
     streamPtr[]
 end
 
-function Pa_OpenStream(inParams::Pa_StreamParameters,
-                       outParams::Pa_StreamParameters,
+function Pa_OpenStream(inParams, outParams,
                        sampleRate, framesPerBuffer,
                        flags::PaStreamFlags)
     streamPtr = Ref{PaStream}(0)
     err = ccall((:Pa_OpenStream, libportaudio), PaError,
                 (Ref{PaStream},
-                Ref{Pa_StreamParameters},
-                Ref{Pa_StreamParameters},
+                Ptr{Pa_StreamParameters},
+                Ptr{Pa_StreamParameters},
                 Cdouble, Culong, PaStreamFlags,
                 Ref{Void}, Ref{Void}),
-                streamPtr, inParams, outParams,
+                streamPtr,
+                inParams, outParams,
                 sampleRate, framesPerBuffer, flags,
                 C_NULL, C_NULL)
     handle_status(err)
