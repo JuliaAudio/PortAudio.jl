@@ -19,6 +19,7 @@ const PA_NO_ERROR = 0
 const PA_INPUT_OVERFLOWED = -10000 + 19
 const PA_OUTPUT_UNDERFLOWED = -10000 + 20
 
+# sample format types
 const paFloat32 = PaSampleFormat(0x01)
 const paInt32   = PaSampleFormat(0x02)
 const paInt24   = PaSampleFormat(0x04)
@@ -35,6 +36,12 @@ const type_to_fmt = Dict{Type, PaSampleFormat}(
     Int8    => 16,
     UInt8   => 3
 )
+
+typealias PaStreamCallbackResult Cint
+# Callback return values
+const paContinue 0
+const paComplete 1
+const paAbort 2
 
 function Pa_Initialize()
     err = ccall((:Pa_Initialize, libportaudio), PaError, ())
@@ -151,18 +158,19 @@ end
 #
 function Pa_OpenStream(inParams, outParams,
                        sampleRate, framesPerBuffer,
-                       flags::PaStreamFlags)
+                       flags::PaStreamFlags,
+                       callback, userdata)
     streamPtr = Ref{PaStream}(0)
     err = ccall((:Pa_OpenStream, libportaudio), PaError,
                 (Ref{PaStream},
                 Ptr{Pa_StreamParameters},
                 Ptr{Pa_StreamParameters},
                 Cdouble, Culong, PaStreamFlags,
-                Ref{Void}, Ref{Void}),
+                Ptr{Void}, Ptr{Void}),
                 streamPtr,
                 inParams, outParams,
                 sampleRate, framesPerBuffer, flags,
-                C_NULL, C_NULL)
+                callback, userdata)
     handle_status(err)
     streamPtr[]
 end

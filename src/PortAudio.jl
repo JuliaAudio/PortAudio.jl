@@ -10,10 +10,33 @@ include("libportaudio.jl")
 export PortAudioSink, PortAudioSource
 
 const DEFAULT_BUFSIZE=4096
-const POLL_SECONDS=0.005
 
-# initialize PortAudio on module load
-Pa_Initialize()
+function __init__()
+    # initialize PortAudio on module load
+    Pa_Initialize()
+
+    global const portaudio_callback_float =
+        cfunction(portaudio_callback, Cint,
+            (Ptr{Float32}, Ptr{Float32}, Culong, Ptr{Void}, Culong,
+            Ptr{CallbackInfo{Float32}}))
+    global const portaudio_callback_int32 =
+        cfunction(portaudio_callback, Cint,
+            (Ptr{Int32}, Ptr{Int32}, Culong, Ptr{Void}, Culong,
+            Ptr{CallbackInfo{Int32}}))
+    # TODO: figure out how we're handling Int24
+    global const portaudio_callback_int16 =
+        cfunction(portaudio_callback, Cint,
+            (Ptr{Int16}, Ptr{Int16}, Culong, Ptr{Void}, Culong,
+            Ptr{CallbackInfo{Int16}}))
+    global const portaudio_callback_int8 =
+        cfunction(portaudio_callback, Cint,
+            (Ptr{Int8}, Ptr{Int8}, Culong, Ptr{Void}, Culong,
+            Ptr{CallbackInfo{Int8}}))
+    global const portaudio_callback_uint8 =
+        cfunction(portaudio_callback, Cint,
+            (Ptr{UInt8}, Ptr{UInt8}, Culong, Ptr{Void}, Culong,
+            Ptr{CallbackInfo{UInt8}}))
+end
 
 function versioninfo(io::IO=STDOUT)
     println(io, Pa_GetVersionText())
@@ -44,82 +67,123 @@ end
 # not for external use, used in error message printing
 devnames() = join(["\"$(dev.name)\"" for dev in devices()], "\n")
 
-# Sources and sinks are mostly the same, so define them with this handy bit of
-# metaprogramming
-for (TypeName, Super) in ((:PortAudioSink, :SampleSink),
-                          (:PortAudioSource, :SampleSource))
-# paramaterized on the sample type and sampling rate type
-    @eval type $TypeName{T, U} <: $Super
-        stream::PaStream
-        name::UTF8String
-        samplerate::U
-        jlbuf::Array{T, 2}
-        pabuf::Array{T, 2}
-        waiters::Vector{Condition}
-        busy::Bool
-    end
+"""Give a pointer to the given field within a Julia object"""
+function fieldptr{T}(obj::T, field::Symbol)
+    fieldnum = findfirst(fieldnames(T), field)
+    offset = fieldoffsets(T)[fieldnum]
 
-    @eval function $TypeName(T, stream, sr, channels, bufsize, name)
-        jlbuf = Array(T, bufsize, channels)
-        # as of portaudio 19.20140130 (which is the HomeBrew version as of 20160319)
-        # noninterleaved data is not supported for the read/write interface on OSX
-        # so we need to use another buffer to interleave (transpose)
-        pabuf = Array(T, channels, bufsize)
-        waiters = Condition[]
+    pointer_from_objref(obj) + offset
+end
+
+# Used to synchronize the portaudio callback and Julia task
+@enum BufferState JuliaPending PortaudioPending
+
+# we want this to be immutable so we can stack allocate it
+immutable CallbackInfo{T}
+    inchannels::Int
+    inbuf::Ptr{T}
+    outchannels::Int
+    outbuf::Ptr{T}
+    taskhandle::Ptr{Void}
+    bufstate::Ptr{BufferState}
+end
+
+# paramaterized on the sample type and sampling rate type
+type PortAudioStream{T, U}
+    stream::PaStream
+    name::UTF8String
+    samplerate::U
+    bufsize::Int
+    sink # untyped because of circular type definition
+    source # untyped because of circular type definition
+    bufinfo::CallbackInfo{T}
+    bufstate::BufferState
+    taskwork::Base.SingleAsyncWork
+
+    function PortAudioStream(T, stream, sr, inchans, outchans, bufsize, name)
+        this = new(stream, utf8(name), sr, bufsize)
+        finalizer(this, close)
+        this.sink = PortAudioSink{T, U}(this, outchans, bufsize)
+        this.source = PortAudioSource{T, U}(this, inchans, bufsize)
+        this.taskwork = Base.SingleAsyncWork(data -> audiotask(this))
+        inbuf = pointer_from_objref(this.source) + fieldoffsets(PortAudioSource)[]
+        this.bufstate = PortAudioPending
+        this.bufinfo = CallbackInfo(inchans, fieldptr(this.source, :pabuf),
+                                    outchans, fieldptr(this.sink, :pabuf),
+                                    this.taskwork.handle,
+                                    fieldptr(this, bufstate))
 
         Pa_StartStream(stream)
 
-        this = $TypeName(stream, utf8(name), sr, jlbuf, pabuf, waiters, false)
-        finalizer(this, close)
-
         this
     end
+
 end
 
-function PortAudioSink(device::PortAudioDevice, eltype=Float32, sr=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE)
-    params = Pa_StreamParameters(device.idx, channels, type_to_fmt[eltype], 0.0, C_NULL)
-    stream = Pa_OpenStream(C_NULL, pointer_from_objref(params), float(sr), bufsize, paNoFlag)
-    PortAudioSink(eltype, stream, sr, channels, bufsize, device.name)
+function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
+        eltype=Float32, sr=48000Hz, inchans=2, outchans=2, bufsize=DEFAULT_BUFSIZE)
+    if inchans == 0
+        inparams = Ptr{Pa_StreamParameters}(0)
+    else
+        inparams = Ref(Pa_StreamParameters(indev.idx, inchans, type_to_fmt[eltype], 0.0, C_NULL))
+    end
+    if outchans == 0
+        outparams = Ptr{Pa_StreamParameters}(0)
+    else
+        outparams = Ref(Pa_StreamParameters(outdev.idx, outchans, type_to_fmt[eltype], 0.0, C_NULL))
+    end
+    stream = Pa_OpenStream(inparams, outparams, float(sr), bufsize, paNoFlag)
+    PortAudioStream{eltype, typeof(sr)}(eltype, stream, sr, inchans, outchans, bufsize, device.name)
 end
 
-function PortAudioSink(devname::AbstractString, args...)
+function PortAudioStream(indevname::AbstractString, outdevname::AbstractString, args...)
+    indev = nothing
+    outdev = nothing
     for d in devices()
-        if d.name == devname
-            return PortAudioSink(d, args...)
+        if d.name == indevname
+            indev = d
+        end
+        if d.name == outdevname
+            outdev = d
         end
     end
-    error("No PortAudio device matching \"$devname\" found.\nAvailable Devices:\n$(devnames())")
+    if indev == nothing
+        error("No device matching \"$indevname\" found.\nAvailable Devices:\n$(devnames())")
+    end
+    if outdev == nothing
+        error("No device matching \"$outdevname\" found.\nAvailable Devices:\n$(devnames())")
+    end
+
+    PortAudioStream(indev, outdev, args...)
 end
 
-function PortAudioSink(args...)
-    idx = Pa_GetDefaultOutputDevice()
-    device = PortAudioDevice(Pa_GetDeviceInfo(idx), idx)
-    PortAudioSink(device, args...)
+# if one device is given, use it for input and output
+PortAudioStream(device::PortAudioDevice, args...) = PortAudioStream(device, device, args...)
+PortAudioStream(device::AbstractString, args...) = PortAudioStream(device, device, args...)
+
+function PortAudioStream(args...)
+    outidx = Pa_GetDefaultOutputDevice()
+    outdevice = PortAudioDevice(Pa_GetDeviceInfo(outidx), outidx)
+    inidx = Pa_GetDefaultInputDevice()
+    indevice = PortAudioDevice(Pa_GetDeviceInfo(inidx), inidx)
+    PortAudioSink(indevice, outdevice, args...)
 end
 
+for (TypeName, Super) in ((:PortAudioSink, :SampleSink),
+                          (:PortAudioSource, :SampleSource))
+    @eval type $TypeName{T, U} <: $Super
+        stream::PortAudioStream{T, U}
+        waiters::Vector{Condition}
+        jlbuf::Array{T, 2}
+        pabuf::Array{T, 2}
 
-function PortAudioSource(device::PortAudioDevice, eltype=Float32, sr=48000Hz, channels=2, bufsize=DEFAULT_BUFSIZE)
-    params = Pa_StreamParameters(device.idx, channels, type_to_fmt[eltype], 0.0, C_NULL)
-    stream = Pa_OpenStream(pointer_from_objref(params), C_NULL, float(sr), bufsize, paNoFlag)
-    PortAudioSource(eltype, stream, sr, channels, bufsize, device.name)
-end
-
-function PortAudioSource(devname::AbstractString, args...)
-    for d in devices()
-        if d.name == devname
-            return PortAudioSource(d, args...)
+        function $TypeName(stream, channels, bufsize)
+            jlbuf = zeros(T, busize, channels)
+            pabuf = zeros(T, channels, bufsize)
+            new(stream, Condition[], jlbuf, pabuf)
         end
     end
-    error("No PortAudio device matching \"$devname\" found.\nAvailable Devices:\n$(devnames())")
 end
-
-function PortAudioSource(args...)
-    idx = Pa_GetDefaultInputDevice()
-    device = PortAudioDevice(Pa_GetDeviceInfo(idx), idx)
-    PortAudioSource(device, args...)
-end
-
-
 
 # most of these methods are the same for Sources and Sinks, so define them on
 # the union
@@ -213,4 +277,49 @@ function SampleTypes.unsafe_read!(source::PortAudioSource, buf::SampleBuf)
     read
 end
 
+"""This is the callback function that gets called directly in the PortAudio
+audio thread, so it's critical that it not interact with the Julia GC"""
+function portaudio_callback{T}(inptr::Ptr{T}, outptr::Ptr{T},
+        nframes, timeinfo, flags, userdata::Ptr{Ptr{Void}})
+    infoptr = Ptr{BufferInfo{T}}(unsafe_load(userdata, 1))
+    info = unsafe_load(infoptr)
+    bufstateptr = Ptr{BufferState}(unsafe_load(userdata, 2))
+    bufstate = unsafe_load(bufstateptr)
+
+    if(bufstate != PortAudioPending)
+        # xrun, copy zeros to outbuffer
+        memset(info.outbuf, 0, sizeof(T)*nframes*info.outchannels)
+        return
+    end
+
+    unsafe_copy!(info.inbuf, inptr, nframes * info.inchannels)
+    unsafe_copy!(outptr, info.outbuf, nframes * info.outchannels)
+    unsafe_store!(bufstateptr, JuliaPending)
+
+    # notify the julia audio task
+    ccall(:uv_async_send, Void, (Ptr{Void},), info.taskhandle)
+
+    paContinue
+end
+
+# as of portaudio 19.20140130 (which is the HomeBrew version as of 20160319)
+# noninterleaved data is not supported for the read/write interface on OSX
+# so we need to use another buffer to interleave (transpose)
+function audiotask{T}(userdata::Ptr{Ptr{Void}})
+    infoptr = Ptr{BufferInfo{T}}(unsafe_load(userdata, 1))
+    info = unsafe_load(infoptr)
+    bufstateptr = Ptr{BufferState}(unsafe_load(userdata, 2))
+    bufstate = unsafe_load(bufstateptr)
+
+    if info.bufstate != JuliaPending
+        return
+    end
+
+    unsafe_store!(bufstateptr, PortaudioPending)
+end
+
 end # module PortAudio
+
+memset(buf, val, count) = ccall(:memset, Ptr{Void},
+    (Ptr{Void}, Cint, Csize_t),
+    buf, val, count)
