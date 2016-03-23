@@ -87,7 +87,6 @@ type PortAudioStream{T, U}
     sink # untyped because of circular type definition
     source # untyped because of circular type definition
     taskwork::Base.SingleAsyncWork
-    taskcond::Condition # used to wake the audio task when the PA callback happens
     bufstate::BufferState # used to synchronize the portaudio and julia sides
     bufinfo::CallbackInfo{T} # immutable data used in the portaudio callback
 
@@ -107,8 +106,7 @@ type PortAudioStream{T, U}
                                         prefill=false, underflow=PAD)
         this.source = PortAudioSource{T, U}(indev.name, this, inchans, bufsize;
                                             prefill=true, overflow=OVERWRITE)
-        this.taskwork = Base.SingleAsyncWork(_ -> wakeaudiotask(this))
-        this.taskcond = Condition()
+        this.taskwork = Base.SingleAsyncWork(_ -> audiotask(this))
         this.bufstate = PortAudioPending
         this.bufinfo = CallbackInfo(inchans, pointer(this.source.pabuf),
                                     outchans, pointer(this.sink.pabuf),
@@ -244,38 +242,23 @@ function portaudio_callback{T}(inptr::Ptr{T}, outptr::Ptr{T},
     paContinue
 end
 
-wakeaudiotask(stream::PortAudioStream) = notify(stream.taskcond)
-
+# this gets called from uv_async_send, so it MUST NOT BLOCK
 function audiotask{T, U}(stream::PortAudioStream{T, U})
-    while true
-        try
-            wait(stream.taskcond)
-            isopen(stream) || break
-            if stream.bufstate != JuliaPending
-                continue
-            end
-
-            transpose!(stream.source.jlbuf, stream.source.pabuf)
-            write(stream.source.ringbuf, stream.source.jlbuf)
-
-            read!(stream.sink.ringbuf, stream.sink.jlbuf)
-            transpose!(stream.sink.pabuf, stream.sink.jlbuf)
-
-            stream.bufstate = PortAudioPending
-        catch ex
-            # if isa(ex, InterruptException)
-            #     for w in stream.source.waiters
-            #         notify(w, ex; error=true)
-            #     end
-            #     for w in stream.sink.waiters
-            #         notify(w, ex; error=true)
-            #     end
-            # else
-            warn("Audio Task died with exception: $ex")
-            Base.show_backtrace(STDOUT, catch_backtrace())
-            break
-            # end
+    try
+        if stream.bufstate != JuliaPending
+            return
         end
+
+        transpose!(stream.source.jlbuf, stream.source.pabuf)
+        write(stream.source.ringbuf, stream.source.jlbuf)
+
+        read!(stream.sink.ringbuf, stream.sink.jlbuf)
+        transpose!(stream.sink.pabuf, stream.sink.jlbuf)
+
+        stream.bufstate = PortAudioPending
+    catch ex
+        warn("Audio Task died with exception: $ex")
+        Base.show_backtrace(STDOUT, catch_backtrace())
     end
 end
 
