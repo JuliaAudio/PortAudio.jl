@@ -39,9 +39,9 @@ const type_to_fmt = Dict{Type, PaSampleFormat}(
 
 typealias PaStreamCallbackResult Cint
 # Callback return values
-const paContinue 0
-const paComplete 1
-const paAbort 2
+const paContinue = PaStreamCallbackResult(0)
+const paComplete = PaStreamCallbackResult(1)
+const paAbort = PaStreamCallbackResult(2)
 
 function Pa_Initialize()
     err = ccall((:Pa_Initialize, libportaudio), PaError, ())
