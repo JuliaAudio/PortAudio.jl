@@ -215,7 +215,7 @@ function SampleTypes.unsafe_write(sink::PortAudioSink, buf::SampleBuf)
     try
         while written < total
             donecond = wait(c)
-            n = min(size(sink.pabuf, 2), total-written)
+            n = min(size(sink.jlbuf, 1), total-written)
             bufstart = 1+written
             bufend = n+written
             @devec sink.jlbuf[1:n, :] = buf[bufstart:bufend, :]
@@ -308,8 +308,18 @@ function audiotask{T, U}(stream::PortAudioStream{T, U})
 
             stream.bufstate = PortAudioPending
         catch ex
-            warn("Audio Task died with exception: $ex")
-            Base.show_backtrace(STDOUT, catch_backtrace())
+            if isa(ex, InterruptException)
+                for w in stream.source.waiters
+                    notify(w, ex; error=true)
+                end
+                for w in stream.sink.waiters
+                    notify(w, ex; error=true)
+                end
+            else
+                warn("Audio Task died with exception: $ex")
+                Base.show_backtrace(STDOUT, catch_backtrace())
+                break
+            end
         end
     end
 end
