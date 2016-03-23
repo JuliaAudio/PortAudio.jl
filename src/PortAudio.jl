@@ -114,7 +114,6 @@ type PortAudioStream{T, U}
                                     fieldptr(this, :bufstate))
         this.stream = Pa_OpenStream(inparams, outparams, float(sr), bufsize,
             paNoFlag, pa_callbacks[T], fieldptr(this, :bufinfo))
-        @schedule audiotask(this)
 
         Pa_StartStream(this.stream)
 
@@ -169,8 +168,6 @@ function Base.close(stream::PortAudioStream)
         Pa_StopStream(stream.stream)
         Pa_CloseStream(stream.stream)
         stream.stream = C_NULL
-        # wake the audio task so it can exit
-        notify(stream.taskcond)
     end
 end
 
