@@ -10,7 +10,7 @@ using RingBuffers
 include( "../deps/deps.jl")
 include("libportaudio.jl")
 
-export PortAudioStream, PortAudioSink, PortAudioSource
+export PortAudioStream
 
 const DEFAULT_BUFSIZE=4096
 
@@ -178,6 +178,14 @@ Base.isopen(stream::PortAudioStream) = stream.stream != C_NULL
 
 SampleTypes.samplerate(stream::PortAudioStream) = stream.samplerate
 
+function Base.show(io::IO, stream::PortAudioStream)
+    println(typeof(stream))
+    println("  Samplerate: ", samplerate(stream))
+    println("  Buffer Size: ", stream.bufsize, " frames")
+    println("  ", nchannels(stream.sink), " channel sink: ", stream.sink.name)
+    print("  ", nchannels(stream.source), " channel source: ", stream.source.name)
+end
+
 # Define our source and sink types
 for (TypeName, Super) in ((:PortAudioSink, :SampleSink),
                           (:PortAudioSource, :SampleSource))
@@ -202,14 +210,15 @@ for (TypeName, Super) in ((:PortAudioSink, :SampleSink),
     end
 end
 
-# function Base.show{T <: Union{PortAudioSink, PortAudioSource}}(io::IO, stream::T)
-#     println(io, T, "(\"", stream.name, "\")")
-#     print(io, nchannels(stream), " channels sampled at ", samplerate(stream))
-# end
-
 SampleTypes.nchannels(s::Union{PortAudioSink, PortAudioSource}) = size(s.jlbuf, 2)
 SampleTypes.samplerate(s::Union{PortAudioSink, PortAudioSource}) = samplerate(s.stream)
 Base.eltype{T, U}(::Union{PortAudioSink{T, U}, PortAudioSource{T, U}}) = T
+
+function Base.show{T <: Union{PortAudioSink, PortAudioSource}}(io::IO, stream::T)
+    println(io, T, "(\"", stream.name, "\")")
+    print(io, nchannels(stream), " channels")
+end
+
 
 function SampleTypes.unsafe_write(sink::PortAudioSink, buf::SampleBuf)
     write(sink.ringbuf, buf)
