@@ -3,12 +3,12 @@ using PortAudio
 """Continuously read from the default audio input and plot an
 ASCII level/peak meter"""
 function micmeter(metersize)
-    mic = PortAudioSource()
+    mic = PortAudioStream(1, 0; bufsize=512)
 
     signalmax = zero(eltype(mic))
     println("Press Ctrl-C to quit")
     while true
-        block = read(mic, 4096)
+        block = read(mic, 512)
         blockmax = maximum(abs(block)) # find the maximum value in the block
         signalmax = max(signalmax, blockmax) # keep the maximum value ever
         print("\r") # reset the cursor to the beginning of the line
@@ -45,3 +45,5 @@ function barcolor(metersize, position)
         :yellow
     end
 end
+
+micmeter(80)
