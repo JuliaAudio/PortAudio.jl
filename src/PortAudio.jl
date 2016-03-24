@@ -93,7 +93,7 @@ type PortAudioStream{T, U}
     # this inner constructor is generally called via the top-level outer
     # constructor below
     function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
-            sr, inchans, outchans, bufsize)
+            inchans, outchans, sr, bufsize)
         inparams = (inchans == 0) ?
             Ptr{Pa_StreamParameters}(0) :
             Ref(Pa_StreamParameters(indev.idx, inchans, type_to_fmt[T], 0.0, C_NULL))
@@ -122,14 +122,14 @@ type PortAudioStream{T, U}
 
 end
 
-# this is the to-level outer constructor that all the other outer constructors
+# this is the top-level outer constructor that all the other outer constructors
 # end up calling
 function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
-        eltype=Float32, sr=48000Hz, inchans=2, outchans=2, bufsize=DEFAULT_BUFSIZE)
-    PortAudioStream{eltype, typeof(sr)}(indev, outdev, sr, inchans, outchans, bufsize)
+        inchans=2, outchans=2; eltype=Float32, samplerate=48000Hz, bufsize=DEFAULT_BUFSIZE)
+    PortAudioStream{eltype, typeof(samplerate)}(indev, outdev, inchans, outchans, samplerate, bufsize)
 end
 
-function PortAudioStream(indevname::AbstractString, outdevname::AbstractString, args...)
+function PortAudioStream(indevname::AbstractString, outdevname::AbstractString, args...; kwargs...)
     indev = nothing
     outdev = nothing
     for d in devices()
@@ -147,20 +147,20 @@ function PortAudioStream(indevname::AbstractString, outdevname::AbstractString, 
         error("No device matching \"$outdevname\" found.\nAvailable Devices:\n$(devnames())")
     end
 
-    PortAudioStream(indev, outdev, args...)
+    PortAudioStream(indev, outdev, args...; kwargs...)
 end
 
 # if one device is given, use it for input and output
-PortAudioStream(device::PortAudioDevice, args...) = PortAudioStream(device, device, args...)
-PortAudioStream(device::AbstractString, args...) = PortAudioStream(device, device, args...)
+PortAudioStream(device::PortAudioDevice, args...; kwargs...) = PortAudioStream(device, device, args...; kwargs...)
+PortAudioStream(device::AbstractString, args...; kwargs...) = PortAudioStream(device, device, args...; kwargs...)
 
 # use the default input and output devices
-function PortAudioStream(args...)
+function PortAudioStream(args...; kwargs...)
     inidx = Pa_GetDefaultInputDevice()
     indevice = PortAudioDevice(Pa_GetDeviceInfo(inidx), inidx)
     outidx = Pa_GetDefaultOutputDevice()
     outdevice = PortAudioDevice(Pa_GetDeviceInfo(outidx), outidx)
-    PortAudioStream(indevice, outdevice, args...)
+    PortAudioStream(indevice, outdevice, args...; kwargs...)
 end
 
 function Base.close(stream::PortAudioStream)
@@ -169,22 +169,32 @@ function Base.close(stream::PortAudioStream)
         Pa_CloseStream(stream.stream)
         stream.stream = C_NULL
     end
+
+    nothing
 end
 
 Base.isopen(stream::PortAudioStream) = stream.stream != C_NULL
 
 SampleTypes.samplerate(stream::PortAudioStream) = stream.samplerate
+Base.eltype{T, U}(stream::PortAudioStream{T, U}) = T
 
 Base.read(stream::PortAudioStream, args...) = read(stream.source, args...)
 Base.read!(stream::PortAudioStream, args...) = read!(stream.source, args...)
 Base.write(stream::PortAudioStream, args...) = write(stream.sink, args...)
+Base.write(sink::PortAudioStream, source::PortAudioStream, args...) = write(sink.sink, source.source, args...)
 
 function Base.show(io::IO, stream::PortAudioStream)
-    println(typeof(stream))
-    println("  Samplerate: ", samplerate(stream))
-    println("  Buffer Size: ", stream.bufsize, " frames")
-    println("  ", nchannels(stream.sink), " channel sink: ", stream.sink.name)
-    print("  ", nchannels(stream.source), " channel source: ", stream.source.name)
+    println(io, typeof(stream))
+    println(io, "  Samplerate: ", samplerate(stream))
+    print(io, "  Buffer Size: ", stream.bufsize, " frames")
+    if nchannels(stream.sink) > 0
+        println()
+        print(io, "  ", nchannels(stream.sink), " channel sink: \"", stream.sink.name, "\"")
+    end
+    if nchannels(stream.source) > 0
+        println()
+        print(io, "  ", nchannels(stream.source), " channel source: \"", stream.source.name, "\"")
+    end
 end
 
 # Define our source and sink types

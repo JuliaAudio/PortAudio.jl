@@ -1,21 +1,21 @@
 PortAudio.jl
 ============
 
-PortAudio.jl is a wrapper for [libportaudio](http://www.portaudio.com/), which gives cross-platform access to audio devices. It is compatible with the types defined in [SampleTypes.jl](https://github.com/JuliaAudio/SampleTypes.jl), so it provides `PortAudioSink` and `PortAudioSource` types, which can be read from and written to.
+PortAudio.jl is a wrapper for [libportaudio](http://www.portaudio.com/), which gives cross-platform access to audio devices. It is compatible with the types defined in [SampleTypes.jl](https://github.com/JuliaAudio/SampleTypes.jl). It provides a `PortAudioStream` type, which can be read from and written to.
 
-## Opening a source or sink
+## Opening a stream
 
-The easiest way to open a source or sink is with the default `PortAudioSource()` and `PortAudioSink()` constructors, which will open a 2-channel stream to your system's default devices. The constructors also take a variety of positional arguments:
+The easiest way to open a source or sink is with the default `PortAudioStream()` constructor, which will open a 2-in, 2-out stream to your system's default device(s). The constructor can also take the input and output channel counts as positional arguments, or a variety of other keyword arguments.
 
 ```julia
-PortAudioSink(eltype=Float32, sr=48000Hz, channels=2, bufsize=4096)
+PortAudioStream(inchans=2, outchans=2; eltype=Float32, samplerate=48000Hz, bufsize=4096)
 ```
 
-You can open a specific device by adding it as the first argument, either as a `PortAudioDevice` instance or by name.
+You can open a specific device by adding it as the first argument, either as a `PortAudioDevice` instance or by name. You can also give separate names or devices if you want different input and output devices
 
 ```julia
-PortAudioSink(device::PortAudioDevice, args...)
-PortAudioSink(devname::AbstractString, args...)
+PortAudioStream(device::PortAudioDevice, args...; kwargs...)
+PortAudioStream(devname::AbstractString, args...; kwargs...)
 ```
 
 You can get a list of your system's devices with the `PortAudio.devices()` function:
@@ -33,35 +33,37 @@ julia> PortAudio.devices()
 
 ## Reading and Writing
 
-`PortAudioSource` and `PortAudioSink` are subtypes of `SampleSource` and `SampleSink`, respectively (from [SampleTypes.jl](https://github.com/JuliaAudio/SampleTypes.jl)). This means they support all the stream and buffer features defined there. For example, if you load SampleTypes with `using SampleTypes` you can read 5 seconds to a buffer with `buf = read(source, 5s)`, regardless of the sample rate of the device.
+The `PortAudioStream` type has `source` and `sink` fields which are of type `PortAudioSource <: SampleSource` and `PortAudioSink <: SampleSink`, respectively. are subtypes of `SampleSource` and `SampleSink`, respectively (from [SampleTypes.jl](https://github.com/JuliaAudio/SampleTypes.jl)). This means they support all the stream and buffer features defined there. For example, if you load SampleTypes with `using SampleTypes` you can read 5 seconds to a buffer with `buf = read(stream.source, 5s)`, regardless of the sample rate of the device.
+
+PortAudio.jl also provides convenience wrappers around the `PortAudioStream` type so you can read and write to it directly, e.g. `write(stream, stream)` will set up a loopback that will read from the input and play it back on the output.
 
 ## Examples
 
 ### Set up an audio pass-through from microphone to speaker
 
 ```julia
-source = PortAudioSource()
-sink = PortAudioSink()
-write(sink, source)
+stream = PortAudioStream()
+write(stream, stream)
 ```
 
 ### Open your built-in microphone and speaker by name
 ```julia
-source = PortAudioSource("Built-in Microph")
-sink = PortAudioSink("Built-in Output")
-write(sink, source)
+stream = PortAudioStream("Built-in Microph", "Built-in Output")
+write(stream, stream)
 ```
 
 ### Record 10 seconds of audio and save to an ogg file
 
 ```julia
-julia> using PortAudio, FileIO, SampleTypes, LibSndFile
+julia> using PortAudio, SampleTypes, LibSndFile
 
-julia> source = PortAudioSource("Built-in Microph")
-PortAudio.PortAudioSource{Float32,SIUnits.SIQuantity{Int64,0,0,-1,0,0,0,0,0,0}}("Built-in Microph")
-2 channels sampled at 48000 s⁻¹
+julia> stream = PortAudioStream("Built-in Microph", 1, 0)
+PortAudio.PortAudioStream{Float32,SIUnits.SIQuantity{Int64,0,0,-1,0,0,0,0,0,0}}
+  Samplerate: 48000 s⁻¹
+  Buffer Size: 4096 frames
+  1 channel source: "Built-in Microph"
 
-julia> buf = read(source, 10s)
+julia> buf = read(stream, 10s)
 480000-frame, 2-channel SampleBuf{Float32, 2, SIUnits.SIQuantity{Int64,0,0,-1,0,0,0,0,0,0}}
 10.0 s at 48000 s⁻¹
 ▁▄▂▃▅▃▂▄▃▂▂▁▁▂▂▁▁▄▃▁▁▄▂▁▁▁▄▃▁▁▃▃▁▁▁▁▁▁▁▁▄▄▄▄▄▂▂▂▁▃▃▁▃▄▂▁▁▁▁▃▃▂▁▁▁▁▁▁▃▃▂▂▁▃▃▃▁▁▁▁
