@@ -175,6 +175,10 @@ Base.isopen(stream::PortAudioStream) = stream.stream != C_NULL
 
 SampleTypes.samplerate(stream::PortAudioStream) = stream.samplerate
 
+Base.read(stream::PortAudioStream, args...) = read(stream.source, args...)
+Base.read!(stream::PortAudioStream, args...) = read!(stream.source, args...)
+Base.write(stream::PortAudioStream, args...) = write(stream.sink, args...)
+
 function Base.show(io::IO, stream::PortAudioStream)
     println(typeof(stream))
     println("  Samplerate: ", samplerate(stream))
