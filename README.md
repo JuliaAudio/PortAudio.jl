@@ -57,11 +57,11 @@ write(stream, stream)
 ```julia
 julia> using PortAudio, SampleTypes, LibSndFile
 
-julia> stream = PortAudioStream("Built-in Microph", 1, 0)
+julia> stream = PortAudioStream("Built-in Microph", 2, 0)
 PortAudio.PortAudioStream{Float32,SIUnits.SIQuantity{Int64,0,0,-1,0,0,0,0,0,0}}
   Samplerate: 48000 s⁻¹
   Buffer Size: 4096 frames
-  1 channel source: "Built-in Microph"
+  2 channel source: "Built-in Microph"
 
 julia> buf = read(stream, 10s)
 480000-frame, 2-channel SampleBuf{Float32, 2, SIUnits.SIQuantity{Int64,0,0,-1,0,0,0,0,0,0}}
