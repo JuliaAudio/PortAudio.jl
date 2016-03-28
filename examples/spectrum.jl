@@ -1,3 +1,6 @@
+# plot a real-time spectrogram. This example is adapted from the GR example
+# at http://gr-framework.org/examples/audio_ex.html
+
 module SpectrumExample
 
 using GR, PortAudio, SampleTypes
