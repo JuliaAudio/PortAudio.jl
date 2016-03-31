@@ -2,7 +2,7 @@ __precompile__()
 
 module PortAudio
 
-using SampleTypes
+using SampledSignals
 using Devectorize
 using RingBuffers
 
@@ -175,7 +175,7 @@ end
 
 Base.isopen(stream::PortAudioStream) = stream.stream != C_NULL
 
-SampleTypes.samplerate(stream::PortAudioStream) = stream.samplerate
+SampledSignals.samplerate(stream::PortAudioStream) = stream.samplerate
 Base.eltype{T, U}(stream::PortAudioStream{T, U}) = T
 
 Base.read(stream::PortAudioStream, args...) = read(stream.source, args...)
@@ -221,8 +221,8 @@ for (TypeName, Super) in ((:PortAudioSink, :SampleSink),
     end
 end
 
-SampleTypes.nchannels(s::Union{PortAudioSink, PortAudioSource}) = size(s.jlbuf, 2)
-SampleTypes.samplerate(s::Union{PortAudioSink, PortAudioSource}) = samplerate(s.stream)
+SampledSignals.nchannels(s::Union{PortAudioSink, PortAudioSource}) = size(s.jlbuf, 2)
+SampledSignals.samplerate(s::Union{PortAudioSink, PortAudioSource}) = samplerate(s.stream)
 Base.eltype{T, U}(::Union{PortAudioSink{T, U}, PortAudioSource{T, U}}) = T
 
 function Base.show{T <: Union{PortAudioSink, PortAudioSource}}(io::IO, stream::T)
@@ -231,11 +231,11 @@ function Base.show{T <: Union{PortAudioSink, PortAudioSource}}(io::IO, stream::T
 end
 
 
-function SampleTypes.unsafe_write(sink::PortAudioSink, buf::SampleBuf)
+function SampledSignals.unsafe_write(sink::PortAudioSink, buf::SampleBuf)
     write(sink.ringbuf, buf)
 end
 
-function SampleTypes.unsafe_read!(source::PortAudioSource, buf::SampleBuf)
+function SampledSignals.unsafe_read!(source::PortAudioSource, buf::SampleBuf)
     read!(source.ringbuf, buf)
 end
 

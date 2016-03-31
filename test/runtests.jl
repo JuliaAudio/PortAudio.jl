@@ -2,7 +2,7 @@
 
 using BaseTestNext
 using PortAudio
-using SampleTypes
+using SampledSignals
 
 # these test are currently set up to run on OSX
 

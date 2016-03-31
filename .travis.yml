@@ -11,8 +11,8 @@ julia:
 notifications:
   email: false
 script:
- # SampleTypes is unregistered so clone it for testing
- - julia -e 'Pkg.clone("https://github.com/JuliaAudio/SampleTypes.jl.git")'
+ # SampledSignals is unregistered so clone it for testing
+ - julia -e 'Pkg.clone("https://github.com/JuliaAudio/SampledSignals.jl.git")'
  - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
  - julia -e 'Pkg.clone(pwd()); Pkg.build("PortAudio"); Pkg.test("PortAudio"; coverage=true)'
 after_success:

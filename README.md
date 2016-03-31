@@ -1,7 +1,7 @@
 PortAudio.jl
 ============
 
-PortAudio.jl is a wrapper for [libportaudio](http://www.portaudio.com/), which gives cross-platform access to audio devices. It is compatible with the types defined in [SampleTypes.jl](https://github.com/JuliaAudio/SampleTypes.jl). It provides a `PortAudioStream` type, which can be read from and written to.
+PortAudio.jl is a wrapper for [libportaudio](http://www.portaudio.com/), which gives cross-platform access to audio devices. It is compatible with the types defined in [SampledSignals.jl](https://github.com/JuliaAudio/SampledSignals.jl). It provides a `PortAudioStream` type, which can be read from and written to.
 
 ## Opening a stream
 
@@ -33,7 +33,7 @@ julia> PortAudio.devices()
 
 ## Reading and Writing
 
-The `PortAudioStream` type has `source` and `sink` fields which are of type `PortAudioSource <: SampleSource` and `PortAudioSink <: SampleSink`, respectively. are subtypes of `SampleSource` and `SampleSink`, respectively (from [SampleTypes.jl](https://github.com/JuliaAudio/SampleTypes.jl)). This means they support all the stream and buffer features defined there. For example, if you load SampleTypes with `using SampleTypes` you can read 5 seconds to a buffer with `buf = read(stream.source, 5s)`, regardless of the sample rate of the device.
+The `PortAudioStream` type has `source` and `sink` fields which are of type `PortAudioSource <: SampleSource` and `PortAudioSink <: SampleSink`, respectively. are subtypes of `SampleSource` and `SampleSink`, respectively (from [SampledSignals.jl](https://github.com/JuliaAudio/SampledSignals.jl)). This means they support all the stream and buffer features defined there. For example, if you load SampledSignals with `using SampledSignals` you can read 5 seconds to a buffer with `buf = read(stream.source, 5s)`, regardless of the sample rate of the device.
 
 PortAudio.jl also provides convenience wrappers around the `PortAudioStream` type so you can read and write to it directly, e.g. `write(stream, stream)` will set up a loopback that will read from the input and play it back on the output.
 
@@ -55,7 +55,7 @@ write(stream, stream)
 ### Record 10 seconds of audio and save to an ogg file
 
 ```julia
-julia> using PortAudio, SampleTypes, LibSndFile
+julia> using PortAudio, SampledSignals, LibSndFile
 
 julia> stream = PortAudioStream("Built-in Microph", 2, 0)
 PortAudio.PortAudioStream{Float32,SIUnits.SIQuantity{Int64,0,0,-1,0,0,0,0,0,0}}
