@@ -1,5 +1,6 @@
 julia 0.4
 BinDeps
 Devectorize
+SampledSignals
 @osx Homebrew
 @windows WinRPM
