@@ -188,12 +188,10 @@ function Base.show(io::IO, stream::PortAudioStream)
     println(io, "  Samplerate: ", samplerate(stream))
     print(io, "  Buffer Size: ", stream.bufsize, " frames")
     if nchannels(stream.sink) > 0
-        println()
-        print(io, "  ", nchannels(stream.sink), " channel sink: \"", stream.sink.name, "\"")
+        print(io, "\n  ", nchannels(stream.sink), " channel sink: \"", stream.sink.name, "\"")
     end
     if nchannels(stream.source) > 0
-        println()
-        print(io, "  ", nchannels(stream.source), " channel source: \"", stream.source.name, "\"")
+        print(io, "\n  ", nchannels(stream.source), " channel source: \"", stream.source.name, "\"")
     end
 end
 
