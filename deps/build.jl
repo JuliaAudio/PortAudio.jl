@@ -5,7 +5,8 @@ using Compat
 
 ENV["JULIA_ROOT"] = abspath(JULIA_HOME, "../../")
 
-libportaudio = library_dependency("libportaudio")
+# include alias for WinRPM library
+libportaudio = library_dependency("libportaudio", aliases=["libportaudio-2"])
 
 # TODO: add other providers with correct names
 provides(AptGet, "libportaudio2", libportaudio)
