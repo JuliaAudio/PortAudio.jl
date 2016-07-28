@@ -5,6 +5,8 @@ module PortAudio
 using SampledSignals
 using Devectorize
 using RingBuffers
+using Compat
+import Compat: UTF8String
 
 # Get binary dependencies loaded from BinDeps
 include( "../deps/deps.jl")
@@ -42,8 +44,8 @@ type PortAudioDevice
 end
 
 PortAudioDevice(info::PaDeviceInfo, idx) = PortAudioDevice(
-        bytestring(info.name),
-        bytestring(Pa_GetHostApiInfo(info.host_api).name),
+        unsafe_string(info.name),
+        unsafe_string(Pa_GetHostApiInfo(info.host_api).name),
         info.max_input_channels,
         info.max_output_channels,
         idx)
@@ -60,7 +62,7 @@ devnames() = join(["\"$(dev.name)\"" for dev in devices()], "\n")
 """Give a pointer to the given field within a Julia object"""
 function fieldptr{T}(obj::T, field::Symbol)
     fieldnum = findfirst(fieldnames(T), field)
-    offset = fieldoffsets(T)[fieldnum]
+    offset = fieldoffset(T, fieldnum)
     FT = fieldtype(T, field)
 
     Ptr{FT}(pointer_from_objref(obj) + offset)

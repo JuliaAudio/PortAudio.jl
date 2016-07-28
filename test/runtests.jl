@@ -1,6 +1,10 @@
 #!/usr/bin/env julia
 
-using BaseTestNext
+if VERSION >= v"0.5.0-dev+7720"
+    using Base.Test
+else
+    using BaseTestNext
+end
 using PortAudio
 using SampledSignals
 

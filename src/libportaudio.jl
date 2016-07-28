@@ -57,7 +57,7 @@ Pa_GetVersion() = ccall((:Pa_GetVersion, libportaudio), Cint, ())
 
 function Pa_GetVersionText()
     versionPtr = ccall((:Pa_GetVersionText, libportaudio), Ptr{Cchar}, ())
-    bytestring(versionPtr)
+    unsafe_string(versionPtr)
 end
 
 # Host API Functions
@@ -69,7 +69,7 @@ end
 # all the host APIs on the system by iterating through those values.
 
 # PaHostApiTypeId values
-const pa_host_api_names = Dict{PaHostApiTypeId, ASCIIString}(
+const pa_host_api_names = Dict{PaHostApiTypeId, UTF8String}(
     0 => "In Development", # use while developing support for a new host API
     1 => "Direct Sound",
     2 => "MME",
