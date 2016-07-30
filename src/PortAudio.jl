@@ -281,7 +281,7 @@ function portaudio_callback{T}(inptr::Ptr{T}, outptr::Ptr{T},
         # TODO: send a notification to an error msg ringbuf
         # TODO (maybe): we could do a partial write if there's anything in the
         # ringbuf, and minimize the dropout
-        memset(outptr, 0, sizeof(T)*nframes*info.outchannels)
+        memset(outptr, 0, sizeof(T)*outsamples)
         return paContinue
     end
 
