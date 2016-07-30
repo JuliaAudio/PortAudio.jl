@@ -8,7 +8,7 @@ PortAudio.jl is a wrapper for [libportaudio](http://www.portaudio.com/), which g
 The easiest way to open a source or sink is with the default `PortAudioStream()` constructor, which will open a 2-in, 2-out stream to your system's default device(s). The constructor can also take the input and output channel counts as positional arguments, or a variety of other keyword arguments.
 
 ```julia
-PortAudioStream(inchans=2, outchans=2; eltype=Float32, samplerate=48000Hz, bufsize=4096)
+PortAudioStream(inchans=2, outchans=2; eltype=Float32, samplerate=48000Hz, blocksize=4096)
 ```
 
 You can open a specific device by adding it as the first argument, either as a `PortAudioDevice` instance or by name. You can also give separate names or devices if you want different input and output devices
