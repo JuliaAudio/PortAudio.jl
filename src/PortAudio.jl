@@ -15,7 +15,7 @@ include("libportaudio.jl")
 export PortAudioStream
 
 # Size of the ringbuffer in frames. 85ms latency at 48kHz
-const DEFAULT_blocksize=4096
+const DEFAULT_BLOCKSIZE=4096
 # data is passed to and from the ringbuffer in chunks with this many frames
 # it should be at most the ringbuffer size, and must evenly divide into the
 # the underlying portaudio buffer size. E.g. if PortAudio is running with a
@@ -123,7 +123,7 @@ end
 # this is the top-level outer constructor that all the other outer constructors
 # end up calling
 function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
-        inchans=2, outchans=2; eltype=Float32, samplerate=48000Hz, blocksize=DEFAULT_blocksize)
+        inchans=2, outchans=2; eltype=Float32, samplerate=48000Hz, blocksize=DEFAULT_BLOCKSIZE)
     PortAudioStream{eltype, typeof(samplerate)}(indev, outdev, inchans, outchans, samplerate, blocksize)
 end
 
