@@ -231,14 +231,15 @@ function SampledSignals.unsafe_write(sink::PortAudioSink, buf::SampleBuf)
     total = nframes(buf)
     nwritten = 0
     while nwritten < total
-        towrite = min(CHUNKSIZE, total-nwritten)
+        while nwritable(sink.ringbuf) == 0
+            wait(sink.ringbuf)
+        end
+        # in 0.4 transpose! throws an error if the range is a UInt
+        towrite = Int(min(nwritable(sink.ringbuf), CHUNKSIZE, total-nwritten))
         # make a buffer of interleaved samples
         # TODO: don't directly access buf.data
         transpose!(view(sink.chunkbuf, :, 1:towrite),
                    view(buf.data, (1:towrite)+nwritten, :))
-        while nwritable(sink.ringbuf) < towrite
-            wait(sink.ringbuf)
-        end
         write(sink.ringbuf, sink.chunkbuf, towrite*nchannels(sink))
 
         nwritten += towrite
@@ -251,10 +252,11 @@ function SampledSignals.unsafe_read!(source::PortAudioSource, buf::SampleBuf)
     total = nframes(buf)
     nread = 0
     while nread < total
-        toread = min(CHUNKSIZE, total-nread)
-        while nreadable(source.ringbuf) < toread
+        while nreadable(source.ringbuf) == 0
             wait(source.ringbuf)
         end
+        # in 0.4 transpose! throws an error if the range is a UInt
+        toread = Int(min(nreadable(source.ringbuf), CHUNKSIZE, total-nread))
         read!(source.ringbuf, source.chunkbuf, toread*nchannels(source))
         # de-interleave the samples
         # TODO: don't directly access buf.data
