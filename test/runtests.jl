@@ -32,43 +32,67 @@ using RingBuffers
     end
 
     @testset "PortAudio Callback works and doesn't allocate" begin
+        cb = PortAudio.pa_callbacks[Float32]
         inbuf = rand(Float32, 16) # simulate microphone input
         sourcebuf = LockFreeRingBuffer(Float32, 64) # the microphone input should end up here
-        testin = zeros(Float32, 16)
 
         outbuf = zeros(Float32, 24) # this is where the output should go
         sinkbuf = LockFreeRingBuffer(Float32, 64) # the callback should copy this to outbuf
-        testout = rand(Float32, 24)
-        write(sinkbuf, testout) # fill the output ringbuffer
 
+        # 2 input channels, 3 output channels
         info = PortAudio.CallbackInfo(2, sourcebuf, 3, sinkbuf)
 
         # handle any conversions here so they don't mess with the allocation
-        inptr = pointer(inbuf)
-        outptr = pointer(outbuf)
+        # the seemingly-redundant type specifiers avoid some allocation during the ccall.
+        # might be due to https://github.com/JuliaLang/julia/issues/15276
+        inptr::Ptr{Float32} = Ptr{Float32}(pointer(inbuf))
+        outptr::Ptr{Float32} = Ptr{Float32}(pointer(outbuf))
         nframes = Culong(8)
         flags = Culong(0)
-        infoptr = Ptr{PortAudio.CallbackInfo{Float32}}(pointer_from_objref(info))
+        infoptr::Ptr{PortAudio.CallbackInfo{Float32}} = Ptr{PortAudio.CallbackInfo{Float32}}(pointer_from_objref(info))
 
-        ret = PortAudio.portaudio_callback(inptr, outptr, nframes, C_NULL, flags, infoptr)
-        @test isa(ret, Cint)
-        @test ret == PortAudio.paContinue
+        testin = zeros(Float32, 16)
+        testout = rand(Float32, 24)
+        write(sinkbuf, testout) # fill the output ringbuffer
+        ret = ccall(cb, Cint,
+            (Ptr{Float32}, Ptr{Float32}, Culong, Ptr{Void}, Culong, Ptr{PortAudio.CallbackInfo{Float32}}),
+            inptr, outptr, nframes, C_NULL, flags, infoptr)
+        @test ret === PortAudio.paContinue
         @test outbuf == testout
         read!(sourcebuf, testin)
         @test inbuf == testin
 
-        # call again (underrun)
-        ret = PortAudio.portaudio_callback(inptr, outptr, nframes, C_NULL, flags, infoptr)
-        @test isa(ret, Cint)
-        @test ret == PortAudio.paContinue
+        testout = rand(Float32, 10)
+        write(sinkbuf, testout) # underfill the output ringbuffer
+        # call again (partial underrun)
+        ret = ccall(cb, Cint,
+            (Ptr{Float32}, Ptr{Float32}, Culong, Ptr{Void}, Culong, Ptr{PortAudio.CallbackInfo{Float32}}),
+            inptr, outptr, nframes, C_NULL, flags, infoptr)
+        @test ret === PortAudio.paContinue
+        @test outbuf[1:10] == testout
+        @test outbuf[11:24] == zeros(Float32, 14)
+        @test nreadable(sourcebuf) == 10
+        @test read!(sourcebuf, testin) == 10
+        @test testin[1:10] == inbuf[1:10]
+
+        # call again (total underrun)
+        ret = ccall(cb, Cint,
+            (Ptr{Float32}, Ptr{Float32}, Culong, Ptr{Void}, Culong, Ptr{PortAudio.CallbackInfo{Float32}}),
+            inptr, outptr, nframes, C_NULL, flags, infoptr)
+        @test ret === PortAudio.paContinue
         @test outbuf == zeros(Float32, 24)
+        @test nreadable(sourcebuf) == 0
 
         write(sinkbuf, testout) # fill the output ringbuffer
         # test allocation
-        alloc = @allocated PortAudio.portaudio_callback(inptr, outptr, nframes, C_NULL, flags, infoptr)
+        alloc = @allocated ccall(cb, Cint,
+            (Ptr{Float32}, Ptr{Float32}, Culong, Ptr{Void}, Culong, Ptr{PortAudio.CallbackInfo{Float32}}),
+            inptr, outptr, nframes, C_NULL, flags, infoptr)
         @test alloc == 0
         # now test allocation in underrun state
-        alloc = @allocated PortAudio.portaudio_callback(inptr, outptr, nframes, C_NULL, flags, infoptr)
+        alloc = @allocated ccall(cb, Cint,
+            (Ptr{Float32}, Ptr{Float32}, Culong, Ptr{Void}, Culong, Ptr{PortAudio.CallbackInfo{Float32}}),
+            inptr, outptr, nframes, C_NULL, flags, infoptr)
         @test alloc == 0
     end
 

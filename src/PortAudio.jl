@@ -276,19 +276,31 @@ function portaudio_callback{T}(inptr::Ptr{T}, outptr::Ptr{T},
     info = unsafe_load(userdata)
     insamples = nframes * info.inchannels
     outsamples = nframes * info.outchannels
-
-    if nreadable(info.outbuf) < outsamples ||
-            nwritable(info.inbuf) < insamples
-        # xrun, copy zeros to outbuffer
-        # TODO: send a notification to an error msg ringbuf
-        # TODO (maybe): we could do a partial write if there's anything in the
-        # ringbuf, and minimize the dropout
-        memset(outptr, 0, sizeof(T)*outsamples)
-        return paContinue
+    bufsamples = if insamples == UInt(0) && outsamples > UInt(0)
+        # playback-only
+        nreadable(info.outbuf)
+    elseif insamples > UInt(0) && outsamples == UInt(0)
+        # record-only
+        nwritable(info.inbuf)
+    elseif insamples > UInt(0) && outsamples > UInt(0)
+        # duplex
+        min(nreadable(info.outbuf), nwritable(info.inbuf))
+    else
+        UInt(0)
     end
 
-    read!(info.outbuf, outptr, outsamples)
-    write(info.inbuf, inptr, insamples)
+    toread = min(bufsamples, outsamples)
+    towrite = min(bufsamples, insamples)
+
+    read!(info.outbuf, outptr, toread)
+    write(info.inbuf, inptr, towrite)
+
+    if toread < outsamples
+        # xrun, copy zeros to outbuffer
+        # TODO: send a notification to an error msg ringbuf
+        memset(outptr+sizeof(T)*toread, 0, sizeof(T)*(outsamples-toread))
+        return paContinue
+    end
 
     paContinue
 end
