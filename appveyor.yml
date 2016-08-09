@@ -28,8 +28,8 @@ build_script:
 # Need to convert from shallow to complete for Pkg.clone to work
   - IF EXIST .git\shallow (git fetch --unshallow)
   - C:\projects\julia\bin\julia -e "versioninfo();
-      Pkg.clone(pwd(), \"SampledSignals\"); Pkg.build(\"SampledSignals\")"
+      Pkg.clone(pwd(), \"PortAudio\"); Pkg.build(\"PortAudio\"); Pkg.checkout(\"Compat\")"
 
 test_script:
   # can't actually run the test, so just make sure it's installable
-  - C:\projects\julia\bin\julia -e "using SampledSignals"
+  - C:\projects\julia\bin\julia -e "using PortAudio"
