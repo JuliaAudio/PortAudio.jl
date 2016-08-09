@@ -51,6 +51,7 @@ type PortAudioDevice
     hostapi::UTF8String
     maxinchans::Int
     maxoutchans::Int
+    defaultsamplerate::Float64
     idx::PaDeviceIndex
 end
 
@@ -59,6 +60,7 @@ PortAudioDevice(info::PaDeviceInfo, idx) = PortAudioDevice(
         unsafe_string(Pa_GetHostApiInfo(info.host_api).name),
         info.max_input_channels,
         info.max_output_channels,
+        info.default_sample_rate,
         idx)
 
 function devices()
@@ -130,7 +132,18 @@ end
 # this is the top-level outer constructor that all the other outer constructors
 # end up calling
 function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
-        inchans=-1, outchans=-1; eltype=Float32, samplerate=48000Hz, blocksize=DEFAULT_BLOCKSIZE)
+        inchans=-1, outchans=-1; eltype=Float32, samplerate=-1, blocksize=DEFAULT_BLOCKSIZE)
+    if samplerate == -1
+        sampleratein = indev.defaultsamplerate * Hz;
+        samplerateout = outdev.defaultsamplerate * Hz;
+        if inchans > 0 && outchans > 0 && sampleratein != samplerateout
+            error("Can't open duplex stream with mismatched samplerates")
+        elseif inchans > 0
+            samplerate = sampleratein
+        else
+            samplerate = samplerateout
+        end
+    end
     PortAudioStream{eltype, typeof(samplerate)}(indev, outdev, inchans, outchans, samplerate, blocksize)
 end
 
