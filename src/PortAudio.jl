@@ -134,8 +134,8 @@ end
 function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
         inchans=-1, outchans=-1; eltype=Float32, samplerate=-1, blocksize=DEFAULT_BLOCKSIZE)
     if samplerate == -1
-        sampleratein = indev.defaultsamplerate * Hz;
-        samplerateout = outdev.defaultsamplerate * Hz;
+        sampleratein = rationalize(indev.defaultsamplerate) * Hz;
+        samplerateout = rationalize(outdev.defaultsamplerate) * Hz;
         if inchans > 0 && outchans > 0 && sampleratein != samplerateout
             error("Can't open duplex stream with mismatched samplerates")
         elseif inchans > 0
