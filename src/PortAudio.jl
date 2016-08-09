@@ -14,7 +14,12 @@ include("libportaudio.jl")
 
 export PortAudioStream
 
-# Size of the ringbuffer in frames. 85ms latency at 48kHz
+# These sizes are all in frames
+# larger ringbuffer lets you fill in more and be more robust against drop-outs
+const DEFAULT_RINGBUFSIZE=16384
+# the prefill frames determine the in-to-out latency on a synchronized duplex stream
+const DEFAULT_PREFILL=4096
+# the block size is what we request from portaudio if no blocksize is given
 const DEFAULT_BLOCKSIZE=4096
 # data is passed to and from the ringbuffer in chunks with this many frames
 # it should be at most the ringbuffer size, and must evenly divide into the
@@ -95,6 +100,8 @@ type PortAudioStream{T, U}
     # constructor below
     function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
             inchans, outchans, sr, blocksize)
+        inchans = inchans == -1 ? indev.maxinchans : inchans
+        outchans = outchans == -1 ? outdev.maxoutchans : outchans
         inparams = (inchans == 0) ?
             Ptr{Pa_StreamParameters}(0) :
             Ref(Pa_StreamParameters(indev.idx, inchans, type_to_fmt[T], 0.0, C_NULL))
@@ -103,11 +110,11 @@ type PortAudioStream{T, U}
             Ref(Pa_StreamParameters(outdev.idx, outchans, type_to_fmt[T], 0.0, C_NULL))
         this = new(sr, blocksize, C_NULL)
         finalizer(this, close)
-        this.sink = PortAudioSink{T, U}(outdev.name, this, outchans, blocksize)
-        this.source = PortAudioSource{T, U}(indev.name, this, inchans, blocksize)
+        this.sink = PortAudioSink{T, U}(outdev.name, this, outchans, DEFAULT_RINGBUFSIZE)
+        this.source = PortAudioSource{T, U}(indev.name, this, inchans, DEFAULT_RINGBUFSIZE)
         if inchans > 0 && outchans > 0
             # we've got a duplex stream. initialize with the output buffer full
-            write(this.sink, SampleBuf(zeros(T, blocksize, outchans), sr))
+            write(this.sink, SampleBuf(zeros(T, DEFAULT_PREFILL, outchans), sr))
         end
         this.bufinfo = CallbackInfo(inchans, this.source.ringbuf,
                                     outchans, this.sink.ringbuf)
@@ -123,10 +130,11 @@ end
 # this is the top-level outer constructor that all the other outer constructors
 # end up calling
 function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
-        inchans=2, outchans=2; eltype=Float32, samplerate=48000Hz, blocksize=DEFAULT_BLOCKSIZE)
+        inchans=-1, outchans=-1; eltype=Float32, samplerate=48000Hz, blocksize=DEFAULT_BLOCKSIZE)
     PortAudioStream{eltype, typeof(samplerate)}(indev, outdev, inchans, outchans, samplerate, blocksize)
 end
 
+# handle device names given as streams
 function PortAudioStream(indevname::AbstractString, outdevname::AbstractString, args...; kwargs...)
     indev = nothing
     outdev = nothing
@@ -148,17 +156,24 @@ function PortAudioStream(indevname::AbstractString, outdevname::AbstractString, 
     PortAudioStream(indev, outdev, args...; kwargs...)
 end
 
-# if one device is given, use it for input and output
-PortAudioStream(device::PortAudioDevice, args...; kwargs...) = PortAudioStream(device, device, args...; kwargs...)
-PortAudioStream(device::AbstractString, args...; kwargs...) = PortAudioStream(device, device, args...; kwargs...)
+# if one device is given, use it for input and output, but set inchans=0 so we
+# end up with an output-only stream
+function PortAudioStream(device::PortAudioDevice, inchans=-1, outchans=-1; kwargs...)
+    inchans = inchans == -1 ? 0 : inchans
+    PortAudioStream(device, device, inchans, outchans; kwargs...)
+end
+function PortAudioStream(device::AbstractString, inchans=-1, outchans=-1; kwargs...)
+    inchans = inchans == -1 ? 0 : inchans
+    PortAudioStream(device, device, inchans, outchans; kwargs...)
+end
 
 # use the default input and output devices
-function PortAudioStream(args...; kwargs...)
+function PortAudioStream(inchans=0, outchans=-1; kwargs...)
     inidx = Pa_GetDefaultInputDevice()
     indevice = PortAudioDevice(Pa_GetDeviceInfo(inidx), inidx)
     outidx = Pa_GetDefaultOutputDevice()
     outdevice = PortAudioDevice(Pa_GetDeviceInfo(outidx), outidx)
-    PortAudioStream(indevice, outdevice, args...; kwargs...)
+    PortAudioStream(indevice, outdevice, inchans, outchans; kwargs...)
 end
 
 function Base.close(stream::PortAudioStream)
@@ -182,6 +197,7 @@ Base.read(stream::PortAudioStream, args...) = read(stream.source, args...)
 Base.read!(stream::PortAudioStream, args...) = read!(stream.source, args...)
 Base.write(stream::PortAudioStream, args...) = write(stream.sink, args...)
 Base.write(sink::PortAudioStream, source::PortAudioStream, args...) = write(sink.sink, source.source, args...)
+Base.flush(stream::PortAudioStream) = flush(stream.sink)
 
 function Base.show(io::IO, stream::PortAudioStream)
     println(io, typeof(stream))
@@ -205,11 +221,11 @@ for (TypeName, Super) in ((:PortAudioSink, :SampleSink),
         ringbuf::LockFreeRingBuffer{T}
         nchannels::Int
 
-        function $TypeName(name, stream, channels, blocksize)
+        function $TypeName(name, stream, channels, ringbufsize)
             # portaudio data comes in interleaved, so we'll end up transposing
             # it back and forth to julia column-major
             chunkbuf = zeros(T, channels, CHUNKSIZE)
-            ringbuf = LockFreeRingBuffer(T, blocksize * channels)
+            ringbuf = LockFreeRingBuffer(T, ringbufsize * channels)
             new(name, stream, chunkbuf, ringbuf, channels)
         end
     end
@@ -226,6 +242,11 @@ function Base.show{T <: Union{PortAudioSink, PortAudioSource}}(io::IO, stream::T
     print(io, nchannels(stream), " channels")
 end
 
+function Base.flush(sink::PortAudioSink)
+    while nwritable(sink.ringbuf) < length(sink.ringbuf)
+        wait(sink.ringbuf)
+    end
+end
 
 function SampledSignals.unsafe_write(sink::PortAudioSink, buf::SampleBuf)
     total = nframes(buf)
@@ -235,7 +256,8 @@ function SampledSignals.unsafe_write(sink::PortAudioSink, buf::SampleBuf)
             wait(sink.ringbuf)
         end
         # in 0.4 transpose! throws an error if the range is a UInt
-        towrite = Int(min(nwritable(sink.ringbuf), CHUNKSIZE, total-nwritten))
+        writable = div(nwritable(sink.ringbuf), nchannels(sink))
+        towrite = Int(min(writable, CHUNKSIZE, total-nwritten))
         # make a buffer of interleaved samples
         # TODO: don't directly access buf.data
         transpose!(view(sink.chunkbuf, :, 1:towrite),

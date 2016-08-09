@@ -97,10 +97,29 @@ using RingBuffers
     end
 
     @testset "Open Default Device" begin
+        println("Recording...")
+        stream = PortAudioStream(2, 0)
+        buf = read(stream, 5s)
+        close(stream)
+        @test size(buf) == (round(Int, 5s * samplerate(stream)), nchannels(stream.source))
+        println("Playing back recording...")
         stream = PortAudioStream()
-        buf = read(stream, 0.001s)
-        @test size(buf) == (round(Int, 0.001s * samplerate(stream)), nchannels(stream.source))
         write(stream, buf)
+        println("flushing...")
+        flush(stream)
+        close(stream)
+        println("Testing pass-through")
+        stream = PortAudioStream(2, 2)
+        write(stream, stream, 5s)
+        flush(stream)
+        close(stream)
+        println("done")
+    end
+    @testset "Samplerate-converting writing" begin
+        stream = PortAudioStream()
+        write(stream, SinSource(eltype(stream), samplerate(stream)*0.8, [220Hz, 330Hz]), 10s)
+        write(stream, SinSource(eltype(stream), samplerate(stream)*1.2, [220Hz, 330Hz]), 10s)
+        flush(stream)
         close(stream)
     end
     @testset "Open Device by name" begin
@@ -125,16 +144,17 @@ using RingBuffers
     # but at least it's not crashing.
     @testset "Queued Writing" begin
         stream = PortAudioStream(0, 2)
-        buf = SampleBuf(rand(eltype(stream), 48000, nchannels(stream.sink)), samplerate(stream))
+        buf = SampleBuf(rand(eltype(stream), 48000, nchannels(stream.sink))*0.1, samplerate(stream))
         t1 = @async write(stream, buf)
         t2 = @async write(stream, buf)
         @test wait(t1) == 48000
         @test wait(t2) == 48000
+        flush(stream)
         close(stream)
     end
     @testset "Queued Reading" begin
         stream = PortAudioStream(2, 0)
-        buf = SampleBuf(rand(eltype(stream), 48000, nchannels(stream.source)), samplerate(stream))
+        buf = SampleBuf(rand(eltype(stream), 48000, nchannels(stream.source))*0.1, samplerate(stream))
         t1 = @async read!(stream, buf)
         t2 = @async read!(stream, buf)
         @test wait(t1) == 48000
