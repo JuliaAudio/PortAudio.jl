@@ -278,7 +278,8 @@ function SampledSignals.unsafe_read!(source::PortAudioSource, buf::SampleBuf)
             wait(source.ringbuf)
         end
         # in 0.4 transpose! throws an error if the range is a UInt
-        toread = Int(min(nreadable(source.ringbuf), CHUNKSIZE, total-nread))
+        readable = div(nreadable(source.ringbuf), nchannels(source))
+        toread = Int(min(readable, CHUNKSIZE, total-nread))
         read!(source.ringbuf, source.chunkbuf, toread*nchannels(source))
         # de-interleave the samples
         # TODO: don't directly access buf.data

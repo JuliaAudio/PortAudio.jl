@@ -117,8 +117,8 @@ using RingBuffers
     end
     @testset "Samplerate-converting writing" begin
         stream = PortAudioStream()
-        write(stream, SinSource(eltype(stream), samplerate(stream)*0.8, [220Hz, 330Hz]), 10s)
-        write(stream, SinSource(eltype(stream), samplerate(stream)*1.2, [220Hz, 330Hz]), 10s)
+        write(stream, SinSource(eltype(stream), samplerate(stream)*0.5, [220Hz, 330Hz]), 3s)
+        write(stream, SinSource(eltype(stream), samplerate(stream)*1.5, [220Hz, 330Hz]), 3s)
         flush(stream)
         close(stream)
     end
