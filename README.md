@@ -44,7 +44,7 @@ PortAudio.jl also provides convenience wrappers around the `PortAudioStream` typ
 ### Set up an audio pass-through from microphone to speaker
 
 ```julia
-stream = PortAudioStream()
+stream = PortAudioStream(2, 2)
 write(stream, stream)
 ```
 
