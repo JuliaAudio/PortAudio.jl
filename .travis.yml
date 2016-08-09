@@ -3,7 +3,7 @@ language: julia
 os:
   - linux
   - osx
-# sudo: required
+sudo: required
 julia:
   # - release
   - 0.4
