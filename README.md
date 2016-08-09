@@ -3,7 +3,7 @@ PortAudio.jl
 
 PortAudio.jl is a wrapper for [libportaudio](http://www.portaudio.com/), which gives cross-platform access to audio devices. It is compatible with the types defined in [SampledSignals.jl](https://github.com/JuliaAudio/SampledSignals.jl). It provides a `PortAudioStream` type, which can be read from and written to.
 
-#### NOTE: This package currently requires the master branch of the `Compat` and `RingBuffers` packages. Use `Pkg.checkout` to checkout the master.
+#### NOTE: This package currently requires the master branch of the `Compat`, `SampledSignals` and `RingBuffers` packages. Use `Pkg.checkout` to checkout the master.
 
 ## Opening a stream
 
