@@ -15,11 +15,8 @@ include("libportaudio.jl")
 export PortAudioStream
 
 # These sizes are all in frames
-# larger ringbuffer lets you fill in more and be more robust against drop-outs
-const DEFAULT_RINGBUFSIZE=16384
-# the prefill frames determine the in-to-out latency on a synchronized duplex stream
-const DEFAULT_PREFILL=4096
-# the block size is what we request from portaudio if no blocksize is given
+# the block size is what we request from portaudio if no blocksize is given.
+# The ringbuffer and pre-fill will be twice the blocksize
 const DEFAULT_BLOCKSIZE=4096
 # data is passed to and from the ringbuffer in chunks with this many frames
 # it should be at most the ringbuffer size, and must evenly divide into the
@@ -113,11 +110,11 @@ type PortAudioStream{T, U}
             Ref(Pa_StreamParameters(outdev.idx, outchans, type_to_fmt[T], 0.0, C_NULL))
         this = new(sr, blocksize, C_NULL)
         finalizer(this, close)
-        this.sink = PortAudioSink{T, U}(outdev.name, this, outchans, DEFAULT_RINGBUFSIZE)
-        this.source = PortAudioSource{T, U}(indev.name, this, inchans, DEFAULT_RINGBUFSIZE)
+        this.sink = PortAudioSink{T, U}(outdev.name, this, outchans, blocksize*2)
+        this.source = PortAudioSource{T, U}(indev.name, this, inchans, blocksize*2)
         if synced && inchans > 0 && outchans > 0
             # we've got a synchronized duplex stream. initialize with the output buffer full
-            write(this.sink, SampleBuf(zeros(T, DEFAULT_PREFILL, outchans), sr))
+            write(this.sink, SampleBuf(zeros(T, blocksize*2, outchans), sr))
         end
         this.bufinfo = CallbackInfo(inchans, this.source.ringbuf,
                                     outchans, this.sink.ringbuf, synced)
