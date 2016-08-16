@@ -26,7 +26,9 @@ const CHUNKSIZE=128
 
 function __init__()
     # initialize PortAudio on module load
-    Pa_Initialize()
+    swallow_stderr() do
+        Pa_Initialize()
+    end
 
     # the portaudio callbacks are parametric on the sample type
     global const pa_callbacks = Dict{Type, Ptr{Void}}()
@@ -118,8 +120,10 @@ type PortAudioStream{T, U}
         end
         this.bufinfo = CallbackInfo(inchans, this.source.ringbuf,
                                     outchans, this.sink.ringbuf, synced)
-        this.stream = Pa_OpenStream(inparams, outparams, float(sr), blocksize,
-            paNoFlag, pa_callbacks[T], fieldptr(this, :bufinfo))
+        this.stream = swallow_stderr() do
+            Pa_OpenStream(inparams, outparams, float(sr), blocksize,
+                paNoFlag, pa_callbacks[T], fieldptr(this, :bufinfo))
+        end
 
         Pa_StartStream(this.stream)
 
@@ -332,6 +336,18 @@ function portaudio_callback{T}(inptr::Ptr{T}, outptr::Ptr{T},
     paContinue
 end
 
+
+"""Call the given function and discard stdout and stderr"""
+function swallow_stderr(f)
+    origerr = STDERR
+    (errread, errwrite) = redirect_stderr()
+    result = f()
+    redirect_stderr(origerr)
+    close(errwrite)
+    close(errread)
+
+    result
+end
 
 memset(buf, val, count) = ccall(:memset, Ptr{Void},
     (Ptr{Void}, Cint, Csize_t),
