@@ -87,6 +87,7 @@ immutable CallbackInfo{T}
     inbuf::LockFreeRingBuffer{T}
     outchannels::Int
     outbuf::LockFreeRingBuffer{T}
+    synced::Bool
 end
 
 # paramaterized on the sample type and sampling rate type
@@ -101,7 +102,7 @@ type PortAudioStream{T, U}
     # this inner constructor is generally called via the top-level outer
     # constructor below
     function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
-            inchans, outchans, sr, blocksize)
+            inchans, outchans, sr, blocksize, synced)
         inchans = inchans == -1 ? indev.maxinchans : inchans
         outchans = outchans == -1 ? outdev.maxoutchans : outchans
         inparams = (inchans == 0) ?
@@ -114,12 +115,12 @@ type PortAudioStream{T, U}
         finalizer(this, close)
         this.sink = PortAudioSink{T, U}(outdev.name, this, outchans, DEFAULT_RINGBUFSIZE)
         this.source = PortAudioSource{T, U}(indev.name, this, inchans, DEFAULT_RINGBUFSIZE)
-        if inchans > 0 && outchans > 0
-            # we've got a duplex stream. initialize with the output buffer full
+        if synced && inchans > 0 && outchans > 0
+            # we've got a synchronized duplex stream. initialize with the output buffer full
             write(this.sink, SampleBuf(zeros(T, DEFAULT_PREFILL, outchans), sr))
         end
         this.bufinfo = CallbackInfo(inchans, this.source.ringbuf,
-                                    outchans, this.sink.ringbuf)
+                                    outchans, this.sink.ringbuf, synced)
         this.stream = Pa_OpenStream(inparams, outparams, float(sr), blocksize,
             paNoFlag, pa_callbacks[T], fieldptr(this, :bufinfo))
 
@@ -132,19 +133,22 @@ end
 # this is the top-level outer constructor that all the other outer constructors
 # end up calling
 function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
-        inchans=-1, outchans=-1; eltype=Float32, samplerate=-1, blocksize=DEFAULT_BLOCKSIZE)
+        inchans=2, outchans=2; eltype=Float32, samplerate=-1, blocksize=DEFAULT_BLOCKSIZE, synced=false)
     if samplerate == -1
         sampleratein = rationalize(indev.defaultsamplerate) * Hz;
         samplerateout = rationalize(outdev.defaultsamplerate) * Hz;
         if inchans > 0 && outchans > 0 && sampleratein != samplerateout
-            error("Can't open duplex stream with mismatched samplerates")
+            error("""
+            Can't open duplex stream with mismatched samplerates (in: $sampleratein, out: $samplerateout).
+                   Try changing your sample rate in your driver settings or open separate input and output
+                   streams""")
         elseif inchans > 0
             samplerate = sampleratein
         else
             samplerate = samplerateout
         end
     end
-    PortAudioStream{eltype, typeof(samplerate)}(indev, outdev, inchans, outchans, samplerate, blocksize)
+    PortAudioStream{eltype, typeof(samplerate)}(indev, outdev, inchans, outchans, samplerate, blocksize, synced)
 end
 
 # handle device names given as streams
@@ -171,17 +175,15 @@ end
 
 # if one device is given, use it for input and output, but set inchans=0 so we
 # end up with an output-only stream
-function PortAudioStream(device::PortAudioDevice, inchans=-1, outchans=-1; kwargs...)
-    inchans = inchans == -1 ? 0 : inchans
+function PortAudioStream(device::PortAudioDevice, inchans=2, outchans=2; kwargs...)
     PortAudioStream(device, device, inchans, outchans; kwargs...)
 end
-function PortAudioStream(device::AbstractString, inchans=-1, outchans=-1; kwargs...)
-    inchans = inchans == -1 ? 0 : inchans
+function PortAudioStream(device::AbstractString, inchans=2, outchans=2; kwargs...)
     PortAudioStream(device, device, inchans, outchans; kwargs...)
 end
 
 # use the default input and output devices
-function PortAudioStream(inchans=0, outchans=-1; kwargs...)
+function PortAudioStream(inchans=2, outchans=2; kwargs...)
     inidx = Pa_GetDefaultInputDevice()
     indevice = PortAudioDevice(Pa_GetDeviceInfo(inidx), inidx)
     outidx = Pa_GetDefaultOutputDevice()
@@ -310,32 +312,24 @@ end
 function portaudio_callback{T}(inptr::Ptr{T}, outptr::Ptr{T},
         nframes, timeinfo, flags, userdata::Ptr{CallbackInfo{T}})
     info = unsafe_load(userdata)
-    insamples = nframes * info.inchannels
-    outsamples = nframes * info.outchannels
-    bufsamples = if insamples == UInt(0) && outsamples > UInt(0)
-        # playback-only
-        nreadable(info.outbuf)
-    elseif insamples > UInt(0) && outsamples == UInt(0)
-        # record-only
-        nwritable(info.inbuf)
-    elseif insamples > UInt(0) && outsamples > UInt(0)
-        # duplex
-        min(nreadable(info.outbuf), nwritable(info.inbuf))
-    else
-        UInt(0)
+    # if there are no channels, treat it as if we can write as many 0-frame channels as we want
+    framesreadable = info.outchannels > 0 ? div(nreadable(info.outbuf), info.outchannels) : nframes
+    frameswritable = info.inchannels > 0 ? div(nwritable(info.inbuf), info.inchannels) : nframes
+    if info.synced
+        framesreadable = min(framesreadable, frameswritable)
+        frameswritable = framesreadable
     end
-
-    toread = min(bufsamples, outsamples)
-    towrite = min(bufsamples, insamples)
+    towrite = min(frameswritable, nframes) * info.inchannels
+    toread = min(framesreadable, nframes) * info.outchannels
 
     read!(info.outbuf, outptr, toread)
     write(info.inbuf, inptr, towrite)
 
-    if toread < outsamples
+    if framesreadable < nframes
+        outsamples = nframes * info.outchannels
         # xrun, copy zeros to outbuffer
         # TODO: send a notification to an error msg ringbuf
         memset(outptr+sizeof(T)*toread, 0, sizeof(T)*(outsamples-toread))
-        return paContinue
     end
 
     paContinue
