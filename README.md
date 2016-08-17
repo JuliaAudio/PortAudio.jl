@@ -33,6 +33,11 @@ julia> PortAudio.devices()
  PortAudio.PortAudioDevice("Built-In Aggregate","Core Audio",2,2,5)
 ```
 
+### Input/Output Synchronization
+
+The `synced` keyword argument to `PortAudioStream` controls whether the input and output ringbuffers are kept synchronized or not, which only effects duplex streams. It should be set to `true` if you need consistent input-to-output latency. In a synchronized stream, the underlying PortAudio callback will only read and write to the buffers an equal number of frames. In a synchronized stream, the user must also read and write an equal number of frames to the stream. If it is only written to or read from, it will eventually block. This is why it is `false` by default.
+
+
 ## Reading and Writing
 
 The `PortAudioStream` type has `source` and `sink` fields which are of type `PortAudioSource <: SampleSource` and `PortAudioSink <: SampleSink`, respectively. are subtypes of `SampleSource` and `SampleSink`, respectively (from [SampledSignals.jl](https://github.com/JuliaAudio/SampledSignals.jl)). This means they support all the stream and buffer features defined there. For example, if you load SampledSignals with `using SampledSignals` you can read 5 seconds to a buffer with `buf = read(stream.source, 5s)`, regardless of the sample rate of the device.
