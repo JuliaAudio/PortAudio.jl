@@ -3,6 +3,10 @@ PortAudio.jl
 
 PortAudio.jl is a wrapper for [libportaudio](http://www.portaudio.com/), which gives cross-platform access to audio devices. It is compatible with the types defined in [SampledSignals.jl](https://github.com/JuliaAudio/SampledSignals.jl). It provides a `PortAudioStream` type, which can be read from and written to.
 
+Installable on Linux and OSX: [![Build Status](https://travis-ci.org/JuliaAudio/PortAudio.jl.svg?branch=master)](https://travis-ci.org/JuliaAudio/PortAudio.jl)
+
+Installable on Windows: [![Build status](https://ci.appveyor.com/api/projects/status/6x1ha7uvrnel060g/branch/master?svg=true)](https://ci.appveyor.com/project/ssfrr/portaudio-jl/branch/master)
+
 ## Opening a stream
 
 The easiest way to open a source or sink is with the default `PortAudioStream()` constructor, which will open a 2-in, 2-out stream to your system's default device(s). The constructor can also take the input and output channel counts as positional arguments, or a variety of other keyword arguments.
