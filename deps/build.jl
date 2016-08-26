@@ -13,12 +13,12 @@ provides(AptGet, "libportaudio2", libportaudio)
 provides(Pacman, "portaudio", libportaudio)
 
 
-@static if is_apple() begin
+@static if is_apple()
     using Homebrew
     provides(Homebrew.HB, "portaudio", libportaudio)
 end
 
-@static if is_windows() begin
+@static if is_windows()
     using WinRPM
     provides(WinRPM.RPM, "libportaudio2", libportaudio, os = :Windows)
 end
