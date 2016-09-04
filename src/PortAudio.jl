@@ -264,20 +264,18 @@ function Base.flush(sink::PortAudioSink)
     end
 end
 
-function SampledSignals.unsafe_write(sink::PortAudioSink, buf::SampleBuf)
-    total = nframes(buf)
+function SampledSignals.unsafe_write(sink::PortAudioSink, buf::Array, frameoffset, framecount)
     nwritten = 0
-    while nwritten < total
+    while nwritten < framecount
         while nwritable(sink.ringbuf) == 0
             wait(sink.ringbuf)
         end
         # in 0.4 transpose! throws an error if the range is a UInt
         writable = div(nwritable(sink.ringbuf), nchannels(sink))
-        towrite = Int(min(writable, CHUNKSIZE, total-nwritten))
+        towrite = Int(min(writable, CHUNKSIZE, framecount-nwritten))
         # make a buffer of interleaved samples
-        # TODO: don't directly access buf.data
         transpose!(view(sink.chunkbuf, :, 1:towrite),
-                   view(buf.data, (1:towrite)+nwritten, :))
+                   view(buf, (1:towrite)+nwritten+frameoffset, :))
         write(sink.ringbuf, sink.chunkbuf, towrite*nchannels(sink))
 
         nwritten += towrite
@@ -286,20 +284,18 @@ function SampledSignals.unsafe_write(sink::PortAudioSink, buf::SampleBuf)
     nwritten
 end
 
-function SampledSignals.unsafe_read!(source::PortAudioSource, buf::SampleBuf)
-    total = nframes(buf)
+function SampledSignals.unsafe_read!(source::PortAudioSource, buf::Array, frameoffset, framecount)
     nread = 0
-    while nread < total
+    while nread < framecount
         while nreadable(source.ringbuf) == 0
             wait(source.ringbuf)
         end
         # in 0.4 transpose! throws an error if the range is a UInt
         readable = div(nreadable(source.ringbuf), nchannels(source))
-        toread = Int(min(readable, CHUNKSIZE, total-nread))
+        toread = Int(min(readable, CHUNKSIZE, framecount-nread))
         read!(source.ringbuf, source.chunkbuf, toread*nchannels(source))
         # de-interleave the samples
-        # TODO: don't directly access buf.data
-        transpose!(view(buf.data, (1:toread)+nread, :),
+        transpose!(view(buf, (1:toread)+nread+frameoffset, :),
                    view(source.chunkbuf, :, 1:toread))
 
         nread += toread

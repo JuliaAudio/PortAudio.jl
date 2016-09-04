@@ -119,7 +119,7 @@ end
         close(stream)
         @test size(buf) == (round(Int, 5s * samplerate(stream)), nchannels(stream.source))
         println("Playing back recording...")
-        stream = PortAudioStream()
+        stream = PortAudioStream(0, 2)
         write(stream, buf)
         println("flushing...")
         flush(stream)
