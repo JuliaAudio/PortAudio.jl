@@ -89,9 +89,8 @@ immutable CallbackInfo{T}
     synced::Bool
 end
 
-# paramaterized on the sample type and sampling rate type
-type PortAudioStream{T, U}
-    samplerate::U
+type PortAudioStream{T}
+    samplerate::Float64
     blocksize::Int
     stream::PaStream
     sink # untyped because of circular type definition
@@ -112,8 +111,8 @@ type PortAudioStream{T, U}
             Ref(Pa_StreamParameters(outdev.idx, outchans, type_to_fmt[T], 0.0, C_NULL))
         this = new(sr, blocksize, C_NULL)
         finalizer(this, close)
-        this.sink = PortAudioSink{T, U}(outdev.name, this, outchans, blocksize*2)
-        this.source = PortAudioSource{T, U}(indev.name, this, inchans, blocksize*2)
+        this.sink = PortAudioSink{T}(outdev.name, this, outchans, blocksize*2)
+        this.source = PortAudioSource{T}(indev.name, this, inchans, blocksize*2)
         if synced && inchans > 0 && outchans > 0
             # we've got a synchronized duplex stream. initialize with the output buffer full
             write(this.sink, SampleBuf(zeros(T, blocksize*2, outchans), sr))
@@ -136,8 +135,8 @@ end
 function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
         inchans=2, outchans=2; eltype=Float32, samplerate=-1, blocksize=DEFAULT_BLOCKSIZE, synced=false)
     if samplerate == -1
-        sampleratein = rationalize(indev.defaultsamplerate) * Hz;
-        samplerateout = rationalize(outdev.defaultsamplerate) * Hz;
+        sampleratein = indev.defaultsamplerate
+        samplerateout = outdev.defaultsamplerate
         if inchans > 0 && outchans > 0 && sampleratein != samplerateout
             error("""
             Can't open duplex stream with mismatched samplerates (in: $sampleratein, out: $samplerateout).
@@ -149,7 +148,7 @@ function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
             samplerate = samplerateout
         end
     end
-    PortAudioStream{eltype, typeof(samplerate)}(indev, outdev, inchans, outchans, samplerate, blocksize, synced)
+    PortAudioStream{eltype}(indev, outdev, inchans, outchans, samplerate, blocksize, synced)
 end
 
 # handle device names given as streams
@@ -207,7 +206,7 @@ end
 Base.isopen(stream::PortAudioStream) = stream.stream != C_NULL
 
 SampledSignals.samplerate(stream::PortAudioStream) = stream.samplerate
-Base.eltype{T, U}(stream::PortAudioStream{T, U}) = T
+Base.eltype{T}(stream::PortAudioStream{T}) = T
 
 Base.read(stream::PortAudioStream, args...) = read(stream.source, args...)
 Base.read!(stream::PortAudioStream, args...) = read!(stream.source, args...)
@@ -217,7 +216,7 @@ Base.flush(stream::PortAudioStream) = flush(stream.sink)
 
 function Base.show(io::IO, stream::PortAudioStream)
     println(io, typeof(stream))
-    println(io, "  Samplerate: ", samplerate(stream))
+    println(io, "  Samplerate: ", samplerate(stream), "Hz")
     print(io, "  Buffer Size: ", stream.blocksize, " frames")
     if nchannels(stream.sink) > 0
         print(io, "\n  ", nchannels(stream.sink), " channel sink: \"", stream.sink.name, "\"")
@@ -230,9 +229,9 @@ end
 # Define our source and sink types
 for (TypeName, Super) in ((:PortAudioSink, :SampleSink),
                           (:PortAudioSource, :SampleSource))
-    @eval type $TypeName{T, U} <: $Super
+    @eval type $TypeName{T} <: $Super
         name::UTF8String
-        stream::PortAudioStream{T, U}
+        stream::PortAudioStream{T}
         chunkbuf::Array{T, 2}
         ringbuf::LockFreeRingBuffer{T}
         nchannels::Int
@@ -250,7 +249,7 @@ end
 SampledSignals.nchannels(s::Union{PortAudioSink, PortAudioSource}) = s.nchannels
 SampledSignals.samplerate(s::Union{PortAudioSink, PortAudioSource}) = samplerate(s.stream)
 SampledSignals.blocksize(s::Union{PortAudioSink, PortAudioSource}) = s.stream.blocksize
-Base.eltype{T, U}(::Union{PortAudioSink{T, U}, PortAudioSource{T, U}}) = T
+Base.eltype{T}(::Union{PortAudioSink{T}, PortAudioSource{T}}) = T
 Base.close(s::Union{PortAudioSink, PortAudioSource}) = close(s.ringbuf)
 
 function Base.show{T <: Union{PortAudioSink, PortAudioSource}}(io::IO, stream::T)

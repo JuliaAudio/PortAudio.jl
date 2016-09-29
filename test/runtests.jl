@@ -8,6 +8,7 @@ end
 using PortAudio
 using SampledSignals
 using RingBuffers
+using SampledSignals
 
 function test_callback(inchans, outchans)
     nframes = Culong(8)
@@ -117,7 +118,7 @@ end
         stream = PortAudioStream(2, 0)
         buf = read(stream, 5s)
         close(stream)
-        @test size(buf) == (round(Int, 5s * samplerate(stream)), nchannels(stream.source))
+        @test size(buf) == (round(Int, 5 * samplerate(stream)), nchannels(stream.source))
         println("Playing back recording...")
         stream = PortAudioStream(0, 2)
         write(stream, buf)
@@ -133,21 +134,21 @@ end
     end
     @testset "Samplerate-converting writing" begin
         stream = PortAudioStream()
-        write(stream, SinSource(eltype(stream), samplerate(stream)*0.8, [220Hz, 330Hz]), 3s)
-        write(stream, SinSource(eltype(stream), samplerate(stream)*1.2, [220Hz, 330Hz]), 3s)
+        write(stream, SinSource(eltype(stream), samplerate(stream)*0.8, [220, 330]), 3s)
+        write(stream, SinSource(eltype(stream), samplerate(stream)*1.2, [220, 330]), 3s)
         flush(stream)
         close(stream)
     end
     @testset "Open Device by name" begin
         stream = PortAudioStream("Built-in Microph", "Built-in Output")
         buf = read(stream, 0.001s)
-        @test size(buf) == (round(Int, 0.001s * samplerate(stream)), nchannels(stream.source))
+        @test size(buf) == (round(Int, 0.001 * samplerate(stream)), nchannels(stream.source))
         write(stream, buf)
         io = IOBuffer()
         show(io, stream)
         @test takebuf_string(io) == """
-        PortAudio.PortAudioStream{Float32,SIUnits.SIQuantity{Rational{Int64},0,0,-1,0,0,0,0,0,0}}
-          Samplerate: 48000//1 s⁻¹
+        PortAudio.PortAudioStream{Float32}
+          Samplerate: 48000.0Hz
           Buffer Size: 4096 frames
           2 channel sink: "Built-in Output"
           2 channel source: "Built-in Microph\""""
