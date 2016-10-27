@@ -8,7 +8,6 @@ end
 using PortAudio
 using SampledSignals
 using RingBuffers
-using SampledSignals
 
 function test_callback(inchans, outchans)
     nframes = Culong(8)
