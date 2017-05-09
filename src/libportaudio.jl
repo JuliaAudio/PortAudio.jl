@@ -1,17 +1,17 @@
 # Low-level wrappers for Portaudio calls
 
 # General type aliases
-typealias PaTime Cdouble
-typealias PaError Cint
-typealias PaSampleFormat Culong
-typealias PaDeviceIndex Cint
-typealias PaHostApiIndex Cint
-typealias PaHostApiTypeId Cint
+const PaTime = Cdouble
+const PaError = Cint
+const PaSampleFormat = Culong
+const PaDeviceIndex = Cint
+const PaHostApiIndex = Cint
+const PaHostApiTypeId = Cint
 # PaStream is always used as an opaque type, so we're always dealing
 # with the pointer
-typealias PaStream Ptr{Void}
-typealias PaStreamCallback Void
-typealias PaStreamFlags Culong
+const PaStream = Ptr{Void}
+const PaStreamCallback = Void
+const PaStreamFlags = Culong
 
 const paNoFlag = PaStreamFlags(0x00)
 
@@ -37,7 +37,7 @@ const type_to_fmt = Dict{Type, PaSampleFormat}(
     UInt8   => 3
 )
 
-typealias PaStreamCallbackResult Cint
+const PaStreamCallbackResult = Cint
 # Callback return values
 const paContinue = PaStreamCallbackResult(0)
 const paComplete = PaStreamCallbackResult(1)
@@ -69,7 +69,7 @@ end
 # all the host APIs on the system by iterating through those values.
 
 # PaHostApiTypeId values
-const pa_host_api_names = Dict{PaHostApiTypeId, UTF8String}(
+const pa_host_api_names = Dict{PaHostApiTypeId, String}(
     0 => "In Development", # use while developing support for a new host API
     1 => "Direct Sound",
     2 => "MME",
