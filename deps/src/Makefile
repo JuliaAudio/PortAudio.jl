@@ -5,13 +5,17 @@ ifeq (exists, $(shell [ -e Make.user ] && echo exists ))
 include Make.user
 endif
 
+TARGETDIR=../usr/lib
+OBJS = pa_shim.o
+SOURCEHASH=$(shell sha256sum pa_shim.c | awk '{print $$1}')
+
 #check-env:
 #ifndef JULIA_INC
 #        $(error Environment variable JULIA_INC is not set.)
 #endif
 
 #INC =-I"$(JULIA_INC)"
-CFLAGS =-Wall -Wno-strict-aliasing -fno-omit-frame-pointer -fPIC -g
+CFLAGS =-Wall -Wno-strict-aliasing -fno-omit-frame-pointer -fPIC -DSOURCEHASH=\"$(SOURCEHASH)\"
 LDFLAGS =-L../../../RingBuffers/deps/usr/lib -lpa_ringbuffer
 # LINUX_LIBS =-lrt
 # LINUX_LDFLAGS =-rdynamic
@@ -19,10 +23,6 @@ LDFLAGS =-L../../../RingBuffers/deps/usr/lib -lpa_ringbuffer
 # portaudio and libsndfile
 # DARWIN_LDFLAGS =-L../../../Homebrew/deps/usr/lib
 # DARWIN_INC =-I../../../Homebrew/deps/usr/include
-TARGETDIR=../usr/lib
-
-OBJS = pa_shim.o
-
 # Figure out OS and architecture
 OS = $(shell uname)
 ifneq (,$(findstring MINGW,$(OS)))

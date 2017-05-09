@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#define SHIM_VERSION 3
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 
 typedef enum {
@@ -39,10 +38,11 @@ void senderr(pa_shim_info_t *info, pa_shim_errmsg_t msg) {
     }
 }
 
-// return the version of the shim so we can make sure things are in sync
-int pa_shim_getversion(void)
+// return the sha256 hash of the shim source so we can make sure things are in sync
+const char *pa_shim_getsourcehash(void)
 {
-    return SHIM_VERSION;
+    // defined on the command-line at build-time
+    return SOURCEHASH;
 }
 
 /*

@@ -29,5 +29,13 @@ mutable struct pa_shim_info_t
     errorhandle::Ptr{Void} # condition to notify on new errors
 end
 
-shimversion() = ccall((:pa_shim_getversion, libpa_shim), Cint, ())
+"""
+    PortAudio.shimhash()
+
+Return the sha256 hash(as a string) of the source file used to build the shim.
+We may use this sometime to verify that the distributed binary stays in sync
+with the rest of the package.
+"""
+shimhash() = unsafe_string(
+        ccall((:pa_shim_getsourcehash, libpa_shim), Cstring, ()))
 Base.unsafe_convert(::Type{Ptr{Void}}, info::pa_shim_info_t) = pointer_from_objref(info)
