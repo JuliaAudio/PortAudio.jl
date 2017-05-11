@@ -240,11 +240,11 @@ function handle_status(err::PaError, show_warnings::Bool=true)
         if show_warnings
             msg = ccall((:Pa_GetErrorText, libportaudio),
                         Ptr{Cchar}, (PaError,), err)
-            warn("libportaudio: " * bytestring(msg))
+            warn("libportaudio: " * unsafe_string(msg))
         end
     elseif err != PA_NO_ERROR
         msg = ccall((:Pa_GetErrorText, libportaudio),
                     Ptr{Cchar}, (PaError,), err)
-        error("libportaudio: " * bytestring(msg))
+        error("libportaudio: " * unsafe_string(msg))
     end
 end

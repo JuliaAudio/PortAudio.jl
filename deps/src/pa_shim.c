@@ -60,34 +60,43 @@ int pa_shim_processcb(const void *input, void *output,
     if(info->notifycb == NULL) {
         fprintf(stderr, "pa_shim ERROR: notifycb is NULL\n");
     }
-
-    int nwrite = PaUtil_GetRingBufferWriteAvailable(info->inputbuf);
-    int nread = PaUtil_GetRingBufferReadAvailable(info->outputbuf);
-    nwrite = MIN(frameCount, nwrite);
-    nread = MIN(frameCount, nread);
-    if(info->sync) {
+    int nwrite;
+    if(info->inputbuf) {
+        nwrite = PaUtil_GetRingBufferWriteAvailable(info->inputbuf);
+        nwrite = MIN(frameCount, nwrite);
+    }
+    int nread;
+    if(info->outputbuf) {
+        nread = PaUtil_GetRingBufferReadAvailable(info->outputbuf);
+        nread = MIN(frameCount, nread);
+    }
+    if(info->inputbuf && info->outputbuf && info->sync) {
         // to keep the buffers synchronized, set readable and writable to
         // their minimum value
         nread = MIN(nread, nwrite);
         nwrite = nread;
     }
     // read/write from the ringbuffers
-    PaUtil_WriteRingBuffer(info->inputbuf, input, nwrite);
-    if(info->notifycb) {
-        info->notifycb(info->inputhandle);
+    if(info->inputbuf) {
+        PaUtil_WriteRingBuffer(info->inputbuf, input, nwrite);
+        if(info->notifycb) {
+            info->notifycb(info->inputhandle);
+        }
+        if(nwrite < frameCount) {
+            senderr(info, PA_SHIM_ERRMSG_OVERFLOW);
+        }
     }
-    PaUtil_ReadRingBuffer(info->outputbuf, output, nread);
-    if(info->notifycb) {
-        info->notifycb(info->outputhandle);
-    }
-    if(nwrite < frameCount) {
-        senderr(info, PA_SHIM_ERRMSG_OVERFLOW);
-    }
-    if(nread < frameCount) {
-        senderr(info, PA_SHIM_ERRMSG_UNDERFLOW);
-        // we didn't fill the whole output buffer, so zero it out
-        memset(output+nread*info->outputbuf->elementSizeBytes, 0,
-               (frameCount - nread)*info->outputbuf->elementSizeBytes);
+    if(info->outputbuf) {
+        PaUtil_ReadRingBuffer(info->outputbuf, output, nread);
+        if(info->notifycb) {
+            info->notifycb(info->outputhandle);
+        }
+        if(nread < frameCount) {
+            senderr(info, PA_SHIM_ERRMSG_UNDERFLOW);
+            // we didn't fill the whole output buffer, so zero it out
+            memset(output+nread*info->outputbuf->elementSizeBytes, 0,
+                   (frameCount - nread)*info->outputbuf->elementSizeBytes);
+        }
     }
 
     return paContinue;

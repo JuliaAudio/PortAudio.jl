@@ -8,6 +8,10 @@ using Suppressor
 
 using Base: AsyncCondition
 
+import Base: eltype, show
+import Base: close, isopen
+import Base: read, read!, write, flush
+
 # Get binary dependencies loaded from BinDeps
 include("../deps/deps.jl")
 include("pa_shim.jl")
@@ -19,7 +23,6 @@ function __init__()
     # initialize PortAudio on module load
     @suppress_err Pa_Initialize()
 end
-
 
 export PortAudioStream
 
@@ -41,7 +44,7 @@ const ERR_BUFSIZE=512
 function versioninfo(io::IO=STDOUT)
     println(io, Pa_GetVersionText())
     println(io, "Version: ", Pa_GetVersion())
-    println(io, "Shim Version: ", shimversion())
+    println(io, "Shim Source Hash: ", shimhash()[1:10])
 end
 
 type PortAudioDevice
@@ -104,13 +107,15 @@ type PortAudioStream{T}
             # we've got a synchronized duplex stream. initialize with the output buffer full
             write(this.sink, SampleBuf(zeros(T, blocksize*2, outchans), sr))
         end
-        this.bufinfo = pa_shim_info_t(bufpointer(this.source),
-                                      bufpointer(this.sink),
-                                      pointer(this.errbuf),
-                                      synced, notifycb_c,
-                                      getnotifyhandle(this.sink),
-                                      getnotifyhandle(this.source),
-                                      getnotifyhandle(this.errbuf))
+        # pass NULL for input/output we're not using
+        this.bufinfo = pa_shim_info_t(
+                inchans > 0 ? bufpointer(this.source) : C_NULL,
+                outchans > 0 ? bufpointer(this.sink) : C_NULL,
+                pointer(this.errbuf),
+                synced, notifycb_c,
+                inchans > 0 ? notifyhandle(this.source) : C_NULL,
+                outchans > 0 ? notifyhandle(this.sink) : C_NULL,
+                notifyhandle(this.errbuf))
         this.stream = @suppress_err Pa_OpenStream(inparams, outparams,
                                                   float(sr), blocksize,
                                                   paNoFlag, shim_processcb_c,
@@ -184,7 +189,7 @@ function PortAudioStream(inchans=2, outchans=2; kwargs...)
     PortAudioStream(indevice, outdevice, inchans, outchans; kwargs...)
 end
 
-function Base.close(stream::PortAudioStream)
+function close(stream::PortAudioStream)
     if stream.stream != C_NULL
         Pa_StopStream(stream.stream)
         Pa_CloseStream(stream.stream)
@@ -196,18 +201,18 @@ function Base.close(stream::PortAudioStream)
     nothing
 end
 
-Base.isopen(stream::PortAudioStream) = stream.stream != C_NULL
+isopen(stream::PortAudioStream) = stream.stream != C_NULL
 
 SampledSignals.samplerate(stream::PortAudioStream) = stream.samplerate
-Base.eltype{T}(stream::PortAudioStream{T}) = T
+eltype{T}(stream::PortAudioStream{T}) = T
 
-Base.read(stream::PortAudioStream, args...) = read(stream.source, args...)
-Base.read!(stream::PortAudioStream, args...) = read!(stream.source, args...)
-Base.write(stream::PortAudioStream, args...) = write(stream.sink, args...)
-Base.write(sink::PortAudioStream, source::PortAudioStream, args...) = write(sink.sink, source.source, args...)
-Base.flush(stream::PortAudioStream) = flush(stream.sink)
+read(stream::PortAudioStream, args...) = read(stream.source, args...)
+read!(stream::PortAudioStream, args...) = read!(stream.source, args...)
+write(stream::PortAudioStream, args...) = write(stream.sink, args...)
+write(sink::PortAudioStream, source::PortAudioStream, args...) = write(sink.sink, source.source, args...)
+flush(stream::PortAudioStream) = flush(stream.sink)
 
-function Base.show(io::IO, stream::PortAudioStream)
+function show(io::IO, stream::PortAudioStream)
     println(io, typeof(stream))
     println(io, "  Samplerate: ", samplerate(stream), "Hz")
     print(io, "  Buffer Size: ", stream.blocksize, " frames")
@@ -272,23 +277,19 @@ end
 SampledSignals.nchannels(s::Union{PortAudioSink, PortAudioSource}) = s.nchannels
 SampledSignals.samplerate(s::Union{PortAudioSink, PortAudioSource}) = samplerate(s.stream)
 SampledSignals.blocksize(s::Union{PortAudioSink, PortAudioSource}) = s.stream.blocksize
-Base.eltype(::Union{PortAudioSink{T}, PortAudioSource{T}}) where {T} = T
-Base.close(s::Union{PortAudioSink, PortAudioSource}) = close(s.ringbuf)
-Base.isopen(s::Union{PortAudioSink, PortAudioSource}) = isopen(s.ringbuf)
-RingBuffers.getnotifyhandle(s::Union{PortAudioSink, PortAudioSource}) = getnotifyhandle(s.ringbuf)
+eltype(::Union{PortAudioSink{T}, PortAudioSource{T}}) where {T} = T
+close(s::Union{PortAudioSink, PortAudioSource}) = close(s.ringbuf)
+isopen(s::Union{PortAudioSink, PortAudioSource}) = isopen(s.ringbuf)
+RingBuffers.notifyhandle(s::Union{PortAudioSink, PortAudioSource}) = notifyhandle(s.ringbuf)
 bufpointer(s::Union{PortAudioSink, PortAudioSource}) = pointer(s.ringbuf)
 name(s::Union{PortAudioSink, PortAudioSource}) = s.name
 
-function Base.show(io::IO, stream::T) where {T <: Union{PortAudioSink, PortAudioSource}}
+function show(io::IO, stream::T) where {T <: Union{PortAudioSink, PortAudioSource}}
     println(io, T, "(\"", stream.name, "\")")
     print(io, nchannels(stream), " channels")
 end
 
-# function Base.flush(sink::PortAudioSink)
-#     while nwritable(sink.ringbuf) < length(sink.ringbuf)
-#         wait(sink.ringbuf)
-#     end
-# end
+flush(sink::PortAudioSink) = flush(sink.ringbuf)
 
 function SampledSignals.unsafe_write(sink::PortAudioSink, buf::Array, frameoffset, framecount)
     nwritten = 0
