@@ -5,48 +5,50 @@ ifeq (exists, $(shell [ -e Make.user ] && echo exists ))
 include Make.user
 endif
 
-TARGETDIR=../usr/lib
+TARGETDIR = ../usr/lib
 OBJS = pa_shim.o
-SOURCEHASH=$(shell sha256sum pa_shim.c | awk '{print $$1}')
 
-#check-env:
-#ifndef JULIA_INC
-#        $(error Environment variable JULIA_INC is not set.)
-#endif
-
-#INC =-I"$(JULIA_INC)"
-CFLAGS =-Wall -Wno-strict-aliasing -fno-omit-frame-pointer -fPIC -DSOURCEHASH=\"$(SOURCEHASH)\"
-LDFLAGS =-L../../../RingBuffers/deps/usr/lib -lpa_ringbuffer
-# LINUX_LIBS =-lrt
-# LINUX_LDFLAGS =-rdynamic
-# add the Homebrew.jl tree to the include dirs in case we used it for
-# portaudio and libsndfile
-# DARWIN_LDFLAGS =-L../../../Homebrew/deps/usr/lib
-# DARWIN_INC =-I../../../Homebrew/deps/usr/include
 # Figure out OS and architecture
-OS = $(shell uname)
+OS=$(shell uname)
 ifneq (,$(findstring MINGW,$(OS)))
   OS=WINNT
 endif
 
 # file extensions and platform-specific libs
 ifeq ($(OS), WINNT)
-  LIBS += $(WINNT_LIBS)
-  LDFLAGS += $(WINNT_LDFLAGS)
-  INC += $(WINNT_INC)
+  LIBS +=
+  LDFLAGS += -L../../../RingBuffers/deps/usr/lib -lpa_ringbuffer
+  INC +=
+  SHACMD = sha256sum
   SHLIB_EXT = dll
 else ifeq ($(OS), Darwin)
-  INC += $(DARWIN_INC)
-  LDFLAGS += $(DARWIN_LDFLAGS)
+  LIBS +=
+  INC +=
+# we'll rely on Julia to load RingBuffers.jl, which will in turn load the C
+# library that we depend on for these symbols
+  LDFLAGS += -dynamiclib -Wl,-undefined,dynamic_lookup
   SHLIB_EXT = dylib
+  SHACMD = shasum -a256
 else
-  LIBS += $(LINUX_LIBS)
-  LDFLAGS += $(LINUX_LDFLAGS)
-  INC += $(LINUX_INC)
+  LIBS +=
+  INC +=
+  LDFLAGS += -L../../../RingBuffers/deps/usr/lib -lpa_ringbuffer
   SHLIB_EXT = so
+  SHACMD = sha256sum
 endif
 
-TARGET=$(TARGETDIR)/pa_shim.$(SHLIB_EXT)
+SOURCEHASH = $(shell $(SHACMD) pa_shim.c | awk '{print $$1}')
+
+CFLAGS += -I../../../RingBuffers/deps/src -Wall -Wno-strict-aliasing -fno-omit-frame-pointer -fPIC -DSOURCEHASH=\"$(SOURCEHASH)\"
+LDFLAGS +=
+# LINUX_LIBS =-lrt
+# LINUX_LDFLAGS =-rdynamic
+# add the Homebrew.jl tree to the include dirs in case we used it for
+# portaudio and libsndfile
+# DARWIN_LDFLAGS =-L../../../Homebrew/deps/usr/lib
+# DARWIN_INC =-I../../../Homebrew/deps/usr/include
+
+TARGET = $(TARGETDIR)/pa_shim.$(SHLIB_EXT)
 
 .PHONY: clean default
 

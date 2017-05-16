@@ -1,7 +1,8 @@
 #include <portaudio.h>
-#include "pa_ringbuffer.h"
+#include <pa_ringbuffer.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <string.h>
 
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 

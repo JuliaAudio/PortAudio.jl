@@ -6,4 +6,3 @@ deps/deps.jl
 *.flac
 *.cov
 coverage
-deps/usr

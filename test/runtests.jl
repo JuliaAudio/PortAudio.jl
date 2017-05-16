@@ -203,7 +203,7 @@ end
         # make sure this is the same version I tested with
         @test startswith(result[1], "PortAudio V19-devel")
         @test result[2] == "Version: 1899"
-        @test result[3] == "Shim Source Hash: 4bfafb6888"
+        @test result[3] == "Shim Source Hash: 4ea2a8526b"
     end
 
     @testset "Basic callback functionality" begin
