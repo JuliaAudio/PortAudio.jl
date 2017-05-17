@@ -1,7 +1,7 @@
 julia 0.6-
 BinDeps
 SampledSignals 0.3.0
-RingBuffers 0.1.0
+RingBuffers 1.0.0
 Suppressor
 @osx Homebrew
 @windows WinRPM
