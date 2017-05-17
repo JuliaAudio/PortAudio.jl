@@ -1,8 +1,7 @@
-const libpa_shim = Libdl.find_library(
-        ["pa_shim"],
-        [joinpath(dirname(@__FILE__), "..", "deps", "usr", "lib")])
-
 function init_pa_shim()
+    global const libpa_shim = Libdl.find_library(
+            ["pa_shim"],
+            [joinpath(dirname(@__FILE__), "..", "deps", "usr", "lib")])
     shim_dlib = Libdl.dlopen(libpa_shim)
     # pointer to the shim's process callback
     global const shim_processcb_c = Libdl.dlsym(shim_dlib, :pa_shim_processcb)

@@ -201,8 +201,7 @@ end
         PortAudio.versioninfo(io)
         result = split(String(take!((io))), "\n")
         # make sure this is the same version I tested with
-        @test startswith(result[1], "PortAudio V19-devel")
-        @test result[2] == "Version: 1899"
+        @test startswith(result[1], "PortAudio V19")
         @test result[3] == "Shim Source Hash: 4ea2a8526b"
     end
 

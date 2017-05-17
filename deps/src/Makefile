@@ -17,7 +17,7 @@ endif
 # file extensions and platform-specific libs
 ifeq ($(OS), WINNT)
   LIBS +=
-  LDFLAGS += -L../../../RingBuffers/deps/usr/lib -lpa_ringbuffer
+  LDFLAGS += -shared -L../../../RingBuffers/deps/usr/lib -lpa_ringbuffer
   INC +=
   SHACMD = sha256sum
   SHLIB_EXT = dll
@@ -32,7 +32,7 @@ else ifeq ($(OS), Darwin)
 else
   LIBS +=
   INC +=
-  LDFLAGS += -L../../../RingBuffers/deps/usr/lib -lpa_ringbuffer
+  LDFLAGS += -shared
   SHLIB_EXT = so
   SHACMD = sha256sum
 endif

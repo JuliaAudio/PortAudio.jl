@@ -4,7 +4,7 @@ module PortAudio
 
 using SampledSignals
 using RingBuffers
-using Suppressor
+#using Suppressor
 
 using Base: AsyncCondition
 
@@ -14,6 +14,7 @@ import Base: read, read!, write, flush
 
 # Get binary dependencies loaded from BinDeps
 include("../deps/deps.jl")
+include("suppressor.jl")
 include("pa_shim.jl")
 include("libportaudio.jl")
 
