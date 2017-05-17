@@ -186,6 +186,9 @@ end
     elseif is_apple()
         default_indev = "Built-in Microph"
         default_outdev = "Built-in Output"
+    elseif is_linux()
+        default_indev = "default"
+        default_outdev = "default"
     end
 
     devs = PortAudio.devices()
