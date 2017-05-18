@@ -1,7 +1,28 @@
 function init_pa_shim()
-    global const libpa_shim = Libdl.find_library(
-            ["pa_shim"],
-            [joinpath(dirname(@__FILE__), "..", "deps", "usr", "lib")])
+    libdir = joinpath(dirname(@__FILE__), "..", "deps", "usr", "lib")
+    libsuffix = ""
+    basename = "pa_shim"
+    @static if is_linux() && Sys.ARCH == :x86_64
+        libsuffix = "x86_64-linux-gnu"
+    elseif is_linux() && Sys.ARCH == :i686
+        libsuffix = "i686-linux-gnu"
+    elseif is_apple() && Sys.ARCH == :x86_64
+        libsuffix = "x86_64-apple-darwin14"
+    elseif is_windows() && Sys.ARCH == :x86_64
+        libsuffix = "x86_64-w64-mingw32"
+    elseif is_windows() && Sys.ARCH == :i686
+        libsuffix = "i686-w64-mingw32"
+    elseif !any(
+            (sfx) -> isfile(joinpath(libdir, "$basename.$sfx")),
+            ("so", "dll", "dylib"))
+        error("Unsupported platform $(Sys.MACHINE). You can build your own library by running `make` from $(joinpath(@__FILE__, "..", "deps", "src"))")
+    end
+    # if there's a suffix-less library, it was built natively on this machine,
+    # so load that one first, otherwise load the pre-built one
+    global const libpa_shim = Base.Libdl.find_library(
+            [basename, "$(basename)_$libsuffix"],
+            [libdir])
+    libpa_shim == "" && error("Could not load $basename library, please file an issue at https://github.com/JuliaAudio/RingBuffers.jl/issues with your `versioninfo()` output")
     shim_dlib = Libdl.dlopen(libpa_shim)
     # pointer to the shim's process callback
     global const shim_processcb_c = Libdl.dlsym(shim_dlib, :pa_shim_processcb)

@@ -177,9 +177,8 @@ function test_callback_overflow(inchans, outchans, synced)
     end
 end
 
-# these test are currently set up to run on OSX
-
-@testset DottedTestSet "PortAudio Tests" begin
+# these default values are specific to my machines
+@testset ExtendedTestSet "PortAudio Tests" begin
     if is_windows()
         default_indev = "Microphone Array (Realtek High "
         default_outdev = "Speaker/Headphone (Realtek High"
@@ -205,7 +204,10 @@ end
         result = split(String(take!((io))), "\n")
         # make sure this is the same version I tested with
         @test startswith(result[1], "PortAudio V19")
-        @test result[3] == "Shim Source Hash: 4ea2a8526b"
+    end
+
+    @testset "using correct shim version" begin
+        @test PortAudio.shimhash() == "87021557a9f999545828eb11e4ebad2cd278b734dd91a8bd3faf05c89912cf80"
     end
 
     @testset "Basic callback functionality" begin
