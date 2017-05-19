@@ -129,6 +129,29 @@ type PortAudioStream{T}
     end
 end
 
+"""
+    PortAudioStream(inchannels=2, outchannels=2; options...)
+    PortAudioStream(duplexdevice, inchannels=2, outchannels=2; options...)
+    PortAudioStream(indevice, outdevice, inchannels=2, outchannels=2; options...)
+
+Audio devices can either be `PortAudioDevice` instances as returned
+by `PortAudio.devices()`, or strings with the device name as reported by the
+operating system. If a single `duplexdevice` is given it will be used for both
+input and output. If no devices are given the system default devices will be
+used.
+
+Options:
+
+* `eltype`:       Sample type of the audio stream (defaults to Float32)
+* `samplerate`:   Sample rate (defaults to device sample rate)
+* `blocksize`:    Size of the blocks that are written to and read from the audio
+                  device. (Defaults to $DEFAULT_BLOCKSIZE)
+* `synced`:       Determines whether the input and output streams are kept in
+                  sync. If `true`, you must read and write an equal number of
+                  frames, and the round-trip latency is guaranteed constant. If
+                  `false`, you are free to read and write separately, but
+                  overflow or underflow can affect the round-trip latency.
+"""
 # this is the top-level outer constructor that all the other outer constructors
 # end up calling
 function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
