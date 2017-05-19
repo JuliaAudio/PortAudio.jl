@@ -287,7 +287,7 @@ end
         println("done")
     end
     @testset "Samplerate-converting writing" begin
-        stream = PortAudioStream()
+        stream = PortAudioStream(0, 2)
         write(stream, SinSource(eltype(stream), samplerate(stream)*0.8, [220, 330]), 3s)
         write(stream, SinSource(eltype(stream), samplerate(stream)*1.2, [220, 330]), 3s)
         flush(stream)
