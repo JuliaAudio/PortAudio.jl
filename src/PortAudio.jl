@@ -6,8 +6,6 @@ using SampledSignals
 using RingBuffers
 #using Suppressor
 
-using Base: AsyncCondition
-
 import Base: eltype, show
 import Base: close, isopen
 import Base: read, read!, write, flush
@@ -350,7 +348,7 @@ end
 
 # this is called by the shim process callback to notify that there is new data.
 # it's run in the audio context so don't do anything besides wake up the
-# AsyncCondition
+# AsyncCondition handle associated with that ring buffer
 notifycb(handle) = ccall(:uv_async_send, Cint, (Ptr{Void}, ), handle)
 
 end # module PortAudio
