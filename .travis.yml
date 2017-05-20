@@ -5,11 +5,9 @@ os:
   - osx
 sudo: required
 julia:
-  - 0.4
-  - 0.5
+  - 0.6
 notifications:
   email: false
 script:
-  # we can't actually run on travis, so just make sure it's installable
  - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
- - julia -e 'Pkg.clone(pwd()); Pkg.build("PortAudio"); using PortAudio'
+ - julia -e 'Pkg.clone(pwd()); Pkg.build("PortAudio"); Pkg.test("PortAudio")'

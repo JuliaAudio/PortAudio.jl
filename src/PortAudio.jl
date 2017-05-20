@@ -3,51 +3,52 @@ __precompile__()
 module PortAudio
 
 using SampledSignals
-using Devectorize
 using RingBuffers
-using Compat
-import Compat: UTF8String, view
+#using Suppressor
+
+import Base: eltype, show
+import Base: close, isopen
+import Base: read, read!, write, flush
 
 # Get binary dependencies loaded from BinDeps
-include( "../deps/deps.jl")
+include("../deps/deps.jl")
+include("suppressor.jl")
+include("pa_shim.jl")
 include("libportaudio.jl")
+
+function __init__()
+    init_pa_shim()
+    global const notifycb_c = cfunction(notifycb, Cint, (Ptr{Void}, ))
+    # initialize PortAudio on module load
+    @suppress_err Pa_Initialize()
+end
 
 export PortAudioStream
 
 # These sizes are all in frames
+
 # the block size is what we request from portaudio if no blocksize is given.
 # The ringbuffer and pre-fill will be twice the blocksize
 const DEFAULT_BLOCKSIZE=4096
+
 # data is passed to and from the ringbuffer in chunks with this many frames
 # it should be at most the ringbuffer size, and must evenly divide into the
 # the underlying portaudio buffer size. E.g. if PortAudio is running with a
 # 2048-frame buffer period, the chunk size can be 2048, 1024, 512, 256, etc.
 const CHUNKSIZE=128
 
-function __init__()
-    # initialize PortAudio on module load
-    swallow_stderr() do
-        Pa_Initialize()
-    end
-
-    # the portaudio callbacks are parametric on the sample type
-    global const pa_callbacks = Dict{Type, Ptr{Void}}()
-
-    for T in (Float32, Int32, Int16, Int8, UInt8)
-        pa_callbacks[T] = cfunction(portaudio_callback, Cint,
-            (Ptr{T}, Ptr{T}, Culong, Ptr{Void}, Culong,
-            Ptr{CallbackInfo{T}}))
-    end
-end
+# ringbuffer to receive errors from the audio processing thread
+const ERR_BUFSIZE=512
 
 function versioninfo(io::IO=STDOUT)
     println(io, Pa_GetVersionText())
-    println(io, "Version Number: ", Pa_GetVersion())
+    println(io, "Version: ", Pa_GetVersion())
+    println(io, "Shim Source Hash: ", shimhash()[1:10])
 end
 
 type PortAudioDevice
-    name::UTF8String
-    hostapi::UTF8String
+    name::String
+    hostapi::String
     maxinchans::Int
     maxoutchans::Int
     defaultsamplerate::Float64
@@ -71,23 +72,9 @@ end
 # not for external use, used in error message printing
 devnames() = join(["\"$(dev.name)\"" for dev in devices()], "\n")
 
-"""Give a pointer to the given field within a Julia object"""
-function fieldptr{T}(obj::T, field::Symbol)
-    fieldnum = findfirst(fieldnames(T), field)
-    offset = fieldoffset(T, fieldnum)
-    FT = fieldtype(T, field)
-
-    Ptr{FT}(pointer_from_objref(obj) + offset)
-end
-
-# we want this to be immutable so we can stack allocate it
-immutable CallbackInfo{T}
-    inchannels::Int
-    inbuf::LockFreeRingBuffer{T}
-    outchannels::Int
-    outbuf::LockFreeRingBuffer{T}
-    synced::Bool
-end
+##################
+# PortAudioStream
+##################
 
 type PortAudioStream{T}
     samplerate::Float64
@@ -95,12 +82,13 @@ type PortAudioStream{T}
     stream::PaStream
     sink # untyped because of circular type definition
     source # untyped because of circular type definition
-    bufinfo::CallbackInfo{T} # immutable data used in the portaudio callback
+    errbuf::RingBuffer{pa_shim_errmsg_t} # used to send errors from the portaudio callback
+    bufinfo::pa_shim_info_t # data used in the portaudio callback
 
     # this inner constructor is generally called via the top-level outer
     # constructor below
-    function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
-            inchans, outchans, sr, blocksize, synced)
+    function PortAudioStream{T}(indev::PortAudioDevice, outdev::PortAudioDevice,
+                                inchans, outchans, sr, blocksize, synced) where {T}
         inchans = inchans == -1 ? indev.maxinchans : inchans
         outchans = outchans == -1 ? outdev.maxoutchans : outchans
         inparams = (inchans == 0) ?
@@ -113,23 +101,55 @@ type PortAudioStream{T}
         finalizer(this, close)
         this.sink = PortAudioSink{T}(outdev.name, this, outchans, blocksize*2)
         this.source = PortAudioSource{T}(indev.name, this, inchans, blocksize*2)
+        this.errbuf = RingBuffer{pa_shim_errmsg_t}(1, ERR_BUFSIZE)
         if synced && inchans > 0 && outchans > 0
             # we've got a synchronized duplex stream. initialize with the output buffer full
             write(this.sink, SampleBuf(zeros(T, blocksize*2, outchans), sr))
         end
-        this.bufinfo = CallbackInfo(inchans, this.source.ringbuf,
-                                    outchans, this.sink.ringbuf, synced)
-        this.stream = swallow_stderr() do
-            Pa_OpenStream(inparams, outparams, float(sr), blocksize,
-                paNoFlag, pa_callbacks[T], fieldptr(this, :bufinfo))
-        end
+        # pass NULL for input/output we're not using
+        this.bufinfo = pa_shim_info_t(
+                inchans > 0 ? bufpointer(this.source) : C_NULL,
+                outchans > 0 ? bufpointer(this.sink) : C_NULL,
+                pointer(this.errbuf),
+                synced, notifycb_c,
+                inchans > 0 ? notifyhandle(this.source) : C_NULL,
+                outchans > 0 ? notifyhandle(this.sink) : C_NULL,
+                notifyhandle(this.errbuf))
+        this.stream = @suppress_err Pa_OpenStream(inparams, outparams,
+                                                  float(sr), blocksize,
+                                                  paNoFlag, shim_processcb_c,
+                                                  this.bufinfo)
 
         Pa_StartStream(this.stream)
+        @async handle_errors(this)
 
         this
     end
 end
 
+"""
+    PortAudioStream(inchannels=2, outchannels=2; options...)
+    PortAudioStream(duplexdevice, inchannels=2, outchannels=2; options...)
+    PortAudioStream(indevice, outdevice, inchannels=2, outchannels=2; options...)
+
+Audio devices can either be `PortAudioDevice` instances as returned
+by `PortAudio.devices()`, or strings with the device name as reported by the
+operating system. If a single `duplexdevice` is given it will be used for both
+input and output. If no devices are given the system default devices will be
+used.
+
+Options:
+
+* `eltype`:       Sample type of the audio stream (defaults to Float32)
+* `samplerate`:   Sample rate (defaults to device sample rate)
+* `blocksize`:    Size of the blocks that are written to and read from the audio
+                  device. (Defaults to $DEFAULT_BLOCKSIZE)
+* `synced`:       Determines whether the input and output streams are kept in
+                  sync. If `true`, you must read and write an equal number of
+                  frames, and the round-trip latency is guaranteed constant. If
+                  `false`, you are free to read and write separately, but
+                  overflow or underflow can affect the round-trip latency.
+"""
 # this is the top-level outer constructor that all the other outer constructors
 # end up calling
 function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
@@ -191,7 +211,7 @@ function PortAudioStream(inchans=2, outchans=2; kwargs...)
     PortAudioStream(indevice, outdevice, inchans, outchans; kwargs...)
 end
 
-function Base.close(stream::PortAudioStream)
+function close(stream::PortAudioStream)
     if stream.stream != C_NULL
         Pa_StopStream(stream.stream)
         Pa_CloseStream(stream.stream)
@@ -203,44 +223,74 @@ function Base.close(stream::PortAudioStream)
     nothing
 end
 
-Base.isopen(stream::PortAudioStream) = stream.stream != C_NULL
+isopen(stream::PortAudioStream) = stream.stream != C_NULL
 
 SampledSignals.samplerate(stream::PortAudioStream) = stream.samplerate
-Base.eltype{T}(stream::PortAudioStream{T}) = T
+eltype{T}(stream::PortAudioStream{T}) = T
 
-Base.read(stream::PortAudioStream, args...) = read(stream.source, args...)
-Base.read!(stream::PortAudioStream, args...) = read!(stream.source, args...)
-Base.write(stream::PortAudioStream, args...) = write(stream.sink, args...)
-Base.write(sink::PortAudioStream, source::PortAudioStream, args...) = write(sink.sink, source.source, args...)
-Base.flush(stream::PortAudioStream) = flush(stream.sink)
+read(stream::PortAudioStream, args...) = read(stream.source, args...)
+read!(stream::PortAudioStream, args...) = read!(stream.source, args...)
+write(stream::PortAudioStream, args...) = write(stream.sink, args...)
+write(sink::PortAudioStream, source::PortAudioStream, args...) = write(sink.sink, source.source, args...)
+flush(stream::PortAudioStream) = flush(stream.sink)
 
-function Base.show(io::IO, stream::PortAudioStream)
+function show(io::IO, stream::PortAudioStream)
     println(io, typeof(stream))
     println(io, "  Samplerate: ", samplerate(stream), "Hz")
     print(io, "  Buffer Size: ", stream.blocksize, " frames")
     if nchannels(stream.sink) > 0
-        print(io, "\n  ", nchannels(stream.sink), " channel sink: \"", stream.sink.name, "\"")
+        print(io, "\n  ", nchannels(stream.sink), " channel sink: \"", name(stream.sink), "\"")
     end
     if nchannels(stream.source) > 0
-        print(io, "\n  ", nchannels(stream.source), " channel source: \"", stream.source.name, "\"")
+        print(io, "\n  ", nchannels(stream.source), " channel source: \"", name(stream.source), "\"")
     end
 end
+
+"""
+    handle_errors(stream::PortAudioStream)
+
+Handle errors coming over the error stream from PortAudio. This is run as an
+independent task while the stream is active.
+"""
+function handle_errors(stream::PortAudioStream)
+    err = Vector{pa_shim_errmsg_t}(1)
+    while true
+        nread = read!(stream.errbuf, err)
+        nread == 1 || break
+        if err[1] == PA_SHIM_ERRMSG_ERR_OVERFLOW
+            warn("Error buffer overflowed on stream $(stream.name)")
+        elseif err[1] == PA_SHIM_ERRMSG_OVERFLOW
+            # warn("Input overflowed from $(name(stream.source))")
+        elseif err[1] == PA_SHIM_ERRMSG_UNDERFLOW
+            # warn("Output underflowed to $(name(stream.sink))")
+        else
+            error("""
+                Got unrecognized error code $(err[1]) from audio thread for
+                stream "$(stream.name)". Please file an issue at
+                https://github.com/juliaaudio/portaudio.jl/issues""")
+        end
+    end
+end
+
+##################################
+# PortAudioSink & PortAudioSource
+##################################
 
 # Define our source and sink types
 for (TypeName, Super) in ((:PortAudioSink, :SampleSink),
                           (:PortAudioSource, :SampleSource))
     @eval type $TypeName{T} <: $Super
-        name::UTF8String
+        name::String
         stream::PortAudioStream{T}
         chunkbuf::Array{T, 2}
-        ringbuf::LockFreeRingBuffer{T}
+        ringbuf::RingBuffer{T}
         nchannels::Int
 
-        function $TypeName(name, stream, channels, ringbufsize)
+        function $TypeName{T}(name, stream, channels, ringbufsize) where {T}
             # portaudio data comes in interleaved, so we'll end up transposing
             # it back and forth to julia column-major
             chunkbuf = zeros(T, channels, CHUNKSIZE)
-            ringbuf = LockFreeRingBuffer(T, ringbufsize * channels)
+            ringbuf = RingBuffer{T}(channels, ringbufsize)
             new(name, stream, chunkbuf, ringbuf, channels)
         end
     end
@@ -249,35 +299,31 @@ end
 SampledSignals.nchannels(s::Union{PortAudioSink, PortAudioSource}) = s.nchannels
 SampledSignals.samplerate(s::Union{PortAudioSink, PortAudioSource}) = samplerate(s.stream)
 SampledSignals.blocksize(s::Union{PortAudioSink, PortAudioSource}) = s.stream.blocksize
-Base.eltype{T}(::Union{PortAudioSink{T}, PortAudioSource{T}}) = T
-Base.close(s::Union{PortAudioSink, PortAudioSource}) = close(s.ringbuf)
+eltype(::Union{PortAudioSink{T}, PortAudioSource{T}}) where {T} = T
+close(s::Union{PortAudioSink, PortAudioSource}) = close(s.ringbuf)
+isopen(s::Union{PortAudioSink, PortAudioSource}) = isopen(s.ringbuf)
+RingBuffers.notifyhandle(s::Union{PortAudioSink, PortAudioSource}) = notifyhandle(s.ringbuf)
+bufpointer(s::Union{PortAudioSink, PortAudioSource}) = pointer(s.ringbuf)
+name(s::Union{PortAudioSink, PortAudioSource}) = s.name
 
-function Base.show{T <: Union{PortAudioSink, PortAudioSource}}(io::IO, stream::T)
+function show(io::IO, stream::T) where {T <: Union{PortAudioSink, PortAudioSource}}
     println(io, T, "(\"", stream.name, "\")")
     print(io, nchannels(stream), " channels")
 end
 
-function Base.flush(sink::PortAudioSink)
-    while nwritable(sink.ringbuf) < length(sink.ringbuf)
-        wait(sink.ringbuf)
-    end
-end
+flush(sink::PortAudioSink) = flush(sink.ringbuf)
 
 function SampledSignals.unsafe_write(sink::PortAudioSink, buf::Array, frameoffset, framecount)
     nwritten = 0
     while nwritten < framecount
-        while nwritable(sink.ringbuf) == 0
-            wait(sink.ringbuf)
-        end
-        # in 0.4 transpose! throws an error if the range is a UInt
-        writable = div(nwritable(sink.ringbuf), nchannels(sink))
-        towrite = Int(min(writable, CHUNKSIZE, framecount-nwritten))
+        towrite = min(framecount-nwritten, CHUNKSIZE)
         # make a buffer of interleaved samples
         transpose!(view(sink.chunkbuf, :, 1:towrite),
                    view(buf, (1:towrite)+nwritten+frameoffset, :))
-        write(sink.ringbuf, sink.chunkbuf, towrite*nchannels(sink))
-
-        nwritten += towrite
+        n = write(sink.ringbuf, sink.chunkbuf, towrite)
+        nwritten += n
+        # break early if the stream is closed
+        n < towrite && break
     end
 
     nwritten
@@ -286,66 +332,23 @@ end
 function SampledSignals.unsafe_read!(source::PortAudioSource, buf::Array, frameoffset, framecount)
     nread = 0
     while nread < framecount
-        while nreadable(source.ringbuf) == 0
-            wait(source.ringbuf)
-        end
-        # in 0.4 transpose! throws an error if the range is a UInt
-        readable = div(nreadable(source.ringbuf), nchannels(source))
-        toread = Int(min(readable, CHUNKSIZE, framecount-nread))
-        read!(source.ringbuf, source.chunkbuf, toread*nchannels(source))
+        toread = min(framecount-nread, CHUNKSIZE)
+        n = read!(source.ringbuf, source.chunkbuf, toread)
         # de-interleave the samples
         transpose!(view(buf, (1:toread)+nread+frameoffset, :),
                    view(source.chunkbuf, :, 1:toread))
 
         nread += toread
+        # break early if the stream is closed
+        n < toread && break
     end
 
     nread
 end
 
-# This is the callback function that gets called directly in the PortAudio
-# audio thread, so it's critical that it not interact with the Julia GC
-function portaudio_callback{T}(inptr::Ptr{T}, outptr::Ptr{T},
-        nframes, timeinfo, flags, userdata::Ptr{CallbackInfo{T}})
-    info = unsafe_load(userdata)
-    # if there are no channels, treat it as if we can write as many 0-frame channels as we want
-    framesreadable = info.outchannels > 0 ? div(nreadable(info.outbuf), info.outchannels) : nframes
-    frameswritable = info.inchannels > 0 ? div(nwritable(info.inbuf), info.inchannels) : nframes
-    if info.synced
-        framesreadable = min(framesreadable, frameswritable)
-        frameswritable = framesreadable
-    end
-    towrite = min(frameswritable, nframes) * info.inchannels
-    toread = min(framesreadable, nframes) * info.outchannels
-
-    read!(info.outbuf, outptr, toread)
-    write(info.inbuf, inptr, towrite)
-
-    if framesreadable < nframes
-        outsamples = nframes * info.outchannels
-        # xrun, copy zeros to outbuffer
-        # TODO: send a notification to an error msg ringbuf
-        memset(outptr+sizeof(T)*toread, 0, sizeof(T)*(outsamples-toread))
-    end
-
-    paContinue
-end
-
-
-"""Call the given function and discard stdout and stderr"""
-function swallow_stderr(f)
-    origerr = STDERR
-    (errread, errwrite) = redirect_stderr()
-    result = f()
-    redirect_stderr(origerr)
-    close(errwrite)
-    close(errread)
-
-    result
-end
-
-memset(buf, val, count) = ccall(:memset, Ptr{Void},
-    (Ptr{Void}, Cint, Csize_t),
-    buf, val, count)
+# this is called by the shim process callback to notify that there is new data.
+# it's run in the audio context so don't do anything besides wake up the
+# AsyncCondition handle associated with that ring buffer
+notifycb(handle) = ccall(:uv_async_send, Cint, (Ptr{Void}, ), handle)
 
 end # module PortAudio

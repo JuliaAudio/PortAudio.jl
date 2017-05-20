@@ -1,9 +1,7 @@
 environment:
   matrix:
-  - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x86/0.4/julia-0.4-latest-win32.exe"
-  - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x64/0.4/julia-0.4-latest-win64.exe"
-  - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x86/0.5/julia-0.5-latest-win32.exe"
-  - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x64/0.5/julia-0.5-latest-win64.exe"
+  - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x86/0.6/julia-0.6-latest-win32.exe"
+  - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x64/0.6/julia-0.6-latest-win64.exe"
 
 notifications:
   - provider: Email
@@ -27,5 +25,4 @@ build_script:
       Pkg.clone(pwd(), \"PortAudio\"); Pkg.build(\"PortAudio\")"
 
 test_script:
-  # can't actually run the test, so just make sure it's installable
-  - C:\projects\julia\bin\julia -e "using PortAudio"
+  - C:\projects\julia\bin\julia --check-bounds=yes -e "Pkg.test(\"PortAudio\")"
