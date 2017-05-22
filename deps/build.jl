@@ -22,4 +22,4 @@ end
     provides(WinRPM.RPM, "libportaudio2", libportaudio, os = :Windows)
 end
 
-@BinDeps.install @compat(Dict(:libportaudio => :libportaudio, ))
+@BinDeps.install Dict(:libportaudio => :libportaudio, )
