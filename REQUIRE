@@ -1,4 +1,4 @@
-julia 0.6-
+julia 0.6.0-pre
 BinDeps
 SampledSignals 0.3.0
 RingBuffers 1.0.0
