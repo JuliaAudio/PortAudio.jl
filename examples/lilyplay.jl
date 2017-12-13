@@ -18,7 +18,7 @@ play(array) = write(pas, array)
 
 function play(A::note, samplingfreq::Real=44100, shape::Function=t->0.6sin(t)+0.2sin(2t)+.05*sin(8t))
     timesamples=0:1/samplingfreq:(A.duration*(A.sustained ? 0.98 : 0.9))
-    v = Float64[shape(2*A.pitch*t) for t in timesamples]
+    v = Float64[shape(2*π*A.pitch*t) for t in timesamples]
     if !A.sustained
         decay_length = Int(floor(length(timesamples) * 0.2))
         v[end-decay_length:end-1] = v[end-decay_length:end-1] .* linspace(1, 0, decay_length)
