@@ -1,11 +1,10 @@
 # Thanks to Jiahao Chen for this great example!
 
 ##
-## NOTE: THIS NEEDS TO BE PORTED OVER TO THE NEW ARCHITECTURE
+## Port to PortAudio system architecture and for Juliia 0.6+ December 12, 2017
 ##
 
-using AudioIO
-import AudioIO.play
+using PortAudio
 
 type note{S<:Real, T<:Real}
     pitch::S
@@ -13,11 +12,15 @@ type note{S<:Real, T<:Real}
     sustained::Bool
 end
 
+
+const pas =  PortAudioStream(0,2)
+play(array) = write(pas, array)
+
 function play(A::note, samplingfreq::Real=44100, shape::Function=t->0.6sin(t)+0.2sin(2t)+.05*sin(8t))
     timesamples=0:1/samplingfreq:(A.duration*(A.sustained ? 0.98 : 0.9))
-    v = Float64[shape(2π*A.pitch*t) for t in timesamples]
+    v = Float64[shape(2*A.pitch*t) for t in timesamples]
     if !A.sustained
-        decay_length = int(length(timesamples) * 0.2)
+        decay_length = Int(floor(length(timesamples) * 0.2))
         v[end-decay_length:end-1] = v[end-decay_length:end-1] .* linspace(1, 0, decay_length)
     end
     play(v)
@@ -34,7 +37,7 @@ function parsevoice(melody::String; tempo=132, beatunit=4, lyrics=nothing)
         percent_idx = findfirst(line, '%') #Trim comment
         percent_idx == 0 || (line = line[1:percent_idx-1])
         for token in split(line)
-            pitch, duration, dotted, sustained =parsetoken(token)
+            pitch, duration, dotted, sustained = parsetoken(String(token))
             duration==nothing && (duration = oldduration)
             oldduration = duration
             dotted && (duration *= 1.5)
@@ -93,7 +96,7 @@ function parsetoken(token::String, Atuning::Real=220)
     end
     #finalize length
     lengthstr = convert(String, lengthbuf)
-    duration = isempty(lengthstr) ? nothing : parseint(lengthstr)
+    duration = isempty(lengthstr) ? nothing : parse(Int, lengthstr)
     return (pitch, duration, sustain, dotted)
 end
 
@@ -103,17 +106,17 @@ f#4 f# g a a g f# e d d e f# e~ e8 d d2
 e4 e f# d e f#8~ g8 f#4 d e f#8~ g f#4 e d e a,
 f#2 f#4 g a a g f# e d d e f# e~ e8 d8 d2""",
 lyrics="""
-Freu- de, schö- ner Göt- ter- fun- ken, Toch- ter aus E- li- - si- um!
+Freu- de, sch??- ner G??t- ter- fun- ken, Toch- ter aus E- li- - si- um!
 Wir be- tre- ten feu- er- trun- ken, Himm- li- sche, dein Hei- - lig- thum!
 Dei- ne Zau- ber bin den - wie- der, was die - Mo- de streng ge- theilt,
-al- le mensch- en wer- den Brü- der wo dein sanf- ter Flü- - gel weilt.
+al- le mensch- en wer- den Br??- der wo dein sanf- ter Fl??- - gel weilt.
 """)
 
 # And now with harmony!
 
 soprano = @async parsevoice("""
 f'#. f'#. g'. a'. a'. g'. f'#. e'~ e'8 d.'4 d.' e.' f#'. f#'.~ f#' e'8 e'4~ e'2
-""", lyrics="Freu- de, schö- ner Göt- ter- fun- ken, Toch- ter aus E- li- - si- um!"
+""", lyrics="Freu- de, sch??- ner G??t- ter- fun- ken, Toch- ter aus E- li- - si- um!"
 )
 alto = @async parsevoice("""
 a. a. a. a.  a.  a. a. a~ g8 f#.4 a.  a.  a. a.~ a a8 a4~ a2
