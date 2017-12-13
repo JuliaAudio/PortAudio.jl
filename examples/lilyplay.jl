@@ -106,10 +106,10 @@ f#4 f# g a a g f# e d d e f# e~ e8 d d2
 e4 e f# d e f#8~ g8 f#4 d e f#8~ g f#4 e d e a,
 f#2 f#4 g a a g f# e d d e f# e~ e8 d8 d2""",
 lyrics="""
-Freu- de, sch??- ner G??t- ter- fun- ken, Toch- ter aus E- li- - si- um!
+Freu- de, schö- ner Göt- ter- fun- ken, Toch- ter aus E- li- - si- um!
 Wir be- tre- ten feu- er- trun- ken, Himm- li- sche, dein Hei- - lig- thum!
 Dei- ne Zau- ber bin den - wie- der, was die - Mo- de streng ge- theilt,
-al- le mensch- en wer- den Br??- der wo dein sanf- ter Fl??- - gel weilt.
+al- le mensch- en wer- den Brü- der wo dein sanf- ter Flü- - gel weilt.
 """)
 
 # And now with harmony!
