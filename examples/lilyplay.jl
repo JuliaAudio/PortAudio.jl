@@ -8,7 +8,7 @@ using PortAudio
 
 module PortAudioMixer
 
-export WriteMixer, writemixed
+export WriteMixer, writemixed, play
 
 mutable struct WriteMixer
     mixbufsize::Int64
@@ -45,6 +45,15 @@ function writemixed(mixer, writestream)
     end
 end
 
+function play(mixer, arr)
+    channum = myid()
+    if !haskey(mixer.channels, channum)
+        mixer.channels[channum] = Channel(4)
+    end
+    put!(mixer.channels[channum], arr)
+end
+
+
 end # module
 
 using PortAudioMixer
@@ -53,13 +62,7 @@ const pas = PortAudioStream(0,2)
 const voicemixer = WriteMixer(8000)
 @async writemixed(voicemixer, pas)
 
-function play(arr)
-    channum = myid()
-    if !haskey(voicemixer.channels, channum)
-        voicemixer.channels[channum] = Channel(4)
-    end
-    put!(voicemixer.channels[channum], arr)
-end
+play(arr) = PortAudioMixer.play(voicemixer, arr)
 
 
 type note{S<:Real, T<:Real}
