@@ -21,8 +21,8 @@ function writemixed(mixer, writestream)
     mixer.mixed = zeros(Float64, mixer.mixbufsize)
     maxdatapos = 0
     while true
+        maxdatapos = 0
         for (i, chan) in mixer.channels
-            maxdatapos = 0
             if isready(chan)
                 arr = take!(chan)
                 if length(arr) > length(mixer.mixed)
