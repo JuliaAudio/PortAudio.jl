@@ -1,20 +1,72 @@
 # Thanks to Jiahao Chen for this great example!
 
 ##
-## Port to PortAudio system architecture and for Juliia 0.6+ December 12, 2017
+## Port to PortAudio system architecture and for Julia 0.6+ December 12, 2017
 ##
 
 using PortAudio
+
+module PortAudioMixer
+
+export WriteMixer, writemixed
+
+mutable struct WriteMixer
+    mixbufsize::Int64
+    mixed::Array{Float64,1}
+    channels::Dict{Int,Channel}
+    WriteMixer(sz) = new(sz, zeros(Float64, sz), Dict{Int,Channel}())
+end
+
+function writemixed(mixer, writestream)
+    mixer.mixed = zeros(Float64, mixer.mixbufsize)
+    maxdatapos = 0
+    while true
+        for (i, chan) in mixer.channels
+            maxdatapos = 0
+            if isready(chan)
+                arr = take!(chan)
+                if length(arr) > length(mixer.mixed)
+                    newmixed = zeros(Float64, length(arr))
+                    newmixed[1:length(mixer.mixed)] .= mixer.mixed
+                    mixer.mixed = newmixed
+                end
+                mixer.mixed[1:length(arr)] .+= arr
+                if length(arr) > maxdatapos
+                    maxdatapos = length(arr)
+                end
+            end
+        end
+        if maxdatapos > 0
+            write(writestream,mixer.mixed[1:maxdatapos])
+            mixer.mixed[1:maxdatapos] .= 0.0
+        else
+            sleep(0.05)
+        end
+    end
+end
+
+end # module
+
+using PortAudioMixer
+
+const pas = PortAudioStream(0,2)
+const voicemixer = WriteMixer(8000)
+@async writemixed(voicemixer, pas)
+
+function play(arr)
+    channum = myid()
+    if !haskey(voicemixer.channels, channum)
+        voicemixer.channels[channum] = Channel(4)
+    end
+    put!(voicemixer.channels[channum], arr)
+end
+
 
 type note{S<:Real, T<:Real}
     pitch::S
     duration::T
     sustained::Bool
 end
-
-
-const pas =  PortAudioStream(0,2)
-play(array) = write(pas, array)
 
 function play(A::note, samplingfreq::Real=44100, shape::Function=t->0.6sin(t)+0.2sin(2t)+.05*sin(8t))
     timesamples=0:1/samplingfreq:(A.duration*(A.sustained ? 0.98 : 0.9))
@@ -114,17 +166,17 @@ al- le mensch- en wer- den Brü- der wo dein sanf- ter Flü- - gel weilt.
 
 # And now with harmony!
 
-soprano = @async parsevoice("""
+soprano = @spawn parsevoice("""
 f'#. f'#. g'. a'. a'. g'. f'#. e'~ e'8 d.'4 d.' e.' f#'. f#'.~ f#' e'8 e'4~ e'2
 """, lyrics="Freu- de, sch??- ner G??t- ter- fun- ken, Toch- ter aus E- li- - si- um!"
 )
-alto = @async parsevoice("""
+alto = @spawn parsevoice("""
 a. a. a. a.  a.  a. a. a~ g8 f#.4 a.  a.  a. a.~ a a8 a4~ a2
 """)
-tenor = @async parsevoice("""
+tenor = @spawn parsevoice("""
 d. d. e. f#. f#. e. d. d~ e8 f#.4 f#. a,. d. d.~ d c#8 c#4 c#2
 """)
-bass = @async parsevoice("""
+bass = @spawn parsevoice("""
 d. d. d. d. a,. a,. a,. b,~ c8 d. a., a., a., a., a, a8, a,4 a,2
 """)
 wait(soprano)
@@ -132,16 +184,16 @@ wait(alto)
 wait(tenor)
 wait(bass)
 
-soprano = @async parsevoice("""
+soprano = @spawn parsevoice("""
 f'#.4 f'#. g'. a'. a'. g'. f'#. e'. d'. d'. e'. f'#. e'.~ e' d'8 d'4~ d'2
 """, lyrics="Wir be- tre- ten feu- er- trun- ken, Himm- li- sche, dein Hei- - lig- thum!")
-alto = @async parsevoice("""
+alto = @spawn parsevoice("""
 a.4 a. b. c'. c'. b. a. g. f#. f#. g. f#. g.~ g4 f#8 f#~ f#2
 """)
-tenor = @async parsevoice("""
+tenor = @spawn parsevoice("""
 d.4 d. d. d. d. d. d. d. d. d. c#. d. c#.~ c# d8 d d2
 """)
-bass = @async parsevoice("""
+bass = @spawn parsevoice("""
 d.4 d. d. d. a,. a,. a,. a., a., a., a., a., a.,~ a, a,8 d, d,2
 """)
 
