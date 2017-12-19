@@ -13,7 +13,7 @@ export WriteMixer, writemixed, play
 mutable struct WriteMixer
     mixbufsize::Int64
     mixed::Array{Float64,1}
-    channels::Dict{Int,Channel}
+    channels::Dict{String,Channel}
     WriteMixer(sz) = new(sz, zeros(Float64, sz), Dict{Int,Channel}())
 end
 
@@ -46,7 +46,7 @@ function writemixed(mixer, writestream)
 end
 
 function play(mixer, arr)
-    channum = myid()
+    channum = "$(current_task())"[27:end]
     if !haskey(mixer.channels, channum)
         mixer.channels[channum] = Channel(4)
     end
@@ -169,17 +169,17 @@ al- le mensch- en wer- den Brü- der wo dein sanf- ter Flü- - gel weilt.
 
 # And now with harmony!
 
-soprano = @spawn parsevoice("""
+soprano = @async parsevoice("""
 f'#. f'#. g'. a'. a'. g'. f'#. e'~ e'8 d.'4 d.' e.' f#'. f#'.~ f#' e'8 e'4~ e'2
 """, lyrics="Freu- de, sch??- ner G??t- ter- fun- ken, Toch- ter aus E- li- - si- um!"
 )
-alto = @spawn parsevoice("""
+alto = @async parsevoice("""
 a. a. a. a.  a.  a. a. a~ g8 f#.4 a.  a.  a. a.~ a a8 a4~ a2
 """)
-tenor = @spawn parsevoice("""
+tenor = @async parsevoice("""
 d. d. e. f#. f#. e. d. d~ e8 f#.4 f#. a,. d. d.~ d c#8 c#4 c#2
 """)
-bass = @spawn parsevoice("""
+bass = @async parsevoice("""
 d. d. d. d. a,. a,. a,. b,~ c8 d. a., a., a., a., a, a8, a,4 a,2
 """)
 wait(soprano)
@@ -187,16 +187,16 @@ wait(alto)
 wait(tenor)
 wait(bass)
 
-soprano = @spawn parsevoice("""
+soprano = @async parsevoice("""
 f'#.4 f'#. g'. a'. a'. g'. f'#. e'. d'. d'. e'. f'#. e'.~ e' d'8 d'4~ d'2
 """, lyrics="Wir be- tre- ten feu- er- trun- ken, Himm- li- sche, dein Hei- - lig- thum!")
-alto = @spawn parsevoice("""
+alto = @async parsevoice("""
 a.4 a. b. c'. c'. b. a. g. f#. f#. g. f#. g.~ g4 f#8 f#~ f#2
 """)
-tenor = @spawn parsevoice("""
+tenor = @async parsevoice("""
 d.4 d. d. d. d. d. d. d. d. d. c#. d. c#.~ c# d8 d d2
 """)
-bass = @spawn parsevoice("""
+bass = @async parsevoice("""
 d.4 d. d. d. a,. a,. a,. a., a., a., a., a., a.,~ a, a,8 d, d,2
 """)
 
