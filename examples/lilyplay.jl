@@ -52,7 +52,7 @@ end
 Send an array of audio data to the mixer to be mixed for playing by PortAudio
 """
 function play(mixer, arr)
-    channum = "$(current_task())"[27:end]
+    channum = "$(current_task())" # stringify for use as Dict key
     if !haskey(mixer.channels, channum)
         mixer.channels[channum] = Channel(4)
     end
