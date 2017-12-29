@@ -1,8 +1,4 @@
-# Thanks to Jiahao Chen for this great example!
-
-##
-## Port to PortAudio system architecture and for Julia 0.6+ December 12, 2017
-##
+# Originally written by Julia Chen for AudioIO.jl, ported to PortAudio.jl by William Herrera
 
 using PortAudio
 
@@ -73,7 +69,7 @@ end
 
 function play(A::note, samplingfreq::Real=44100, shape::Function=t->0.6sin(t)+0.2sin(2t)+.05*sin(8t))
     timesamples=0:1/samplingfreq:(A.duration*(A.sustained ? 0.98 : 0.9))
-    v = Float64[shape(2*π*A.pitch*t) for t in timesamples]
+    v = Float64[shape(2π*A.pitch*t) for t in timesamples]
     if !A.sustained
         decay_length = Int(floor(length(timesamples) * 0.2))
         v[end-decay_length:end-1] = v[end-decay_length:end-1] .* linspace(1, 0, decay_length)
@@ -171,7 +167,7 @@ al- le mensch- en wer- den Brü- der wo dein sanf- ter Flü- - gel weilt.
 
 soprano = @async parsevoice("""
 f'#. f'#. g'. a'. a'. g'. f'#. e'~ e'8 d.'4 d.' e.' f#'. f#'.~ f#' e'8 e'4~ e'2
-""", lyrics="Freu- de, sch??- ner G??t- ter- fun- ken, Toch- ter aus E- li- - si- um!"
+""", lyrics="Freu- de, schö- ner Göt- ter- fun- ken, Toch- ter aus E- li- - si- um!"
 )
 alto = @async parsevoice("""
 a. a. a. a.  a.  a. a. a~ g8 f#.4 a.  a.  a. a.~ a a8 a4~ a2
