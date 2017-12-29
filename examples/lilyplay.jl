@@ -2,10 +2,10 @@
 
 using PortAudio
 
-module PortAudioMixer
-
-export WriteMixer, writemixed, play
-
+"""
+    WriteMixer
+struct for mixing simultaneous audio streams for the single stream used by PortAudio's callback
+"""
 mutable struct WriteMixer
     mixbufsize::Int64
     mixed::Array{Float64,1}
@@ -13,6 +13,11 @@ mutable struct WriteMixer
     WriteMixer(sz) = new(sz, zeros(Float64, sz), Dict{Int,Channel}())
 end
 
+"""
+    writemixed
+Run as a separate task, this gathers data from multiple simultaneous streams 
+and sends the summed data to PortAudio
+"""
 function writemixed(mixer, writestream)
     mixer.mixed = zeros(Float64, mixer.mixbufsize)
     maxdatapos = 0
@@ -41,6 +46,11 @@ function writemixed(mixer, writestream)
     end
 end
 
+
+"""
+    play(mixer, arr)
+Send an array of audio data to the mixer to be mixed for playing by PortAudio
+"""
 function play(mixer, arr)
     channum = "$(current_task())"[27:end]
     if !haskey(mixer.channels, channum)
@@ -49,10 +59,6 @@ function play(mixer, arr)
     put!(mixer.channels[channum], arr)
 end
 
-
-end # module
-
-using PortAudioMixer
 
 const pas = PortAudioStream(0,2)
 const voicemixer = WriteMixer(8000)
