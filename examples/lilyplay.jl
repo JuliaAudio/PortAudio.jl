@@ -64,7 +64,7 @@ const pas = PortAudioStream(0,2)
 const voicemixer = WriteMixer(8000)
 @async writemixed(voicemixer, pas)
 
-play(arr) = PortAudioMixer.play(voicemixer, arr)
+play(arr) = play(voicemixer, arr)
 
 
 type note{S<:Real, T<:Real}
