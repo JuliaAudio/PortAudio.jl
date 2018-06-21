@@ -4,9 +4,9 @@
 macro suppress_err(block)
     quote
         if ccall(:jl_generating_output, Cint, ()) == 0
-            ORIGINAL_STDERR = STDERR
+            ORIGINAL_STDERR = stderr
             err_rd, err_wr = redirect_stderr()
-            err_reader = @async readstring(err_rd)
+            err_reader = @async read(err_rd, String)
         end
 
         value = $(esc(block))

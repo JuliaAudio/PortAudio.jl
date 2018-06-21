@@ -5,13 +5,13 @@
 include("runtests.jl")
 
 # these default values are specific to my machines
-if is_windows()
+if Compat.Sys.iswindows()
     default_indev = "Microphone Array (Realtek High "
     default_outdev = "Speaker/Headphone (Realtek High"
-elseif is_apple()
-    default_indev = "Built-in Microph"
+elseif Compat.Sys.isapple()
+    default_indev = "Built-in Microphone"
     default_outdev = "Built-in Output"
-elseif is_linux()
+elseif Compat.Sys.islinux()
     default_indev = "default"
     default_outdev = "default"
 end
@@ -50,12 +50,12 @@ end
         write(stream, buf)
         io = IOBuffer()
         show(io, stream)
-        @test String(take!(io)) == """
-        PortAudio.PortAudioStream{Float32}
+        @test Compat.occursin("""
+        PortAudioStream{Float32}
           Samplerate: 44100.0Hz
           Buffer Size: 4096 frames
           2 channel sink: "$default_outdev"
-          2 channel source: "$default_indev\""""
+          2 channel source: "$default_indev\"""", String(take!(io)))
         close(stream)
     end
     @testset "Error on wrong name" begin
@@ -68,8 +68,8 @@ end
         buf = SampleBuf(rand(eltype(stream), 48000, nchannels(stream.sink))*0.1, samplerate(stream))
         t1 = @async write(stream, buf)
         t2 = @async write(stream, buf)
-        @test wait(t1) == 48000
-        @test wait(t2) == 48000
+        @test fetch(t1) == 48000
+        @test fetch(t2) == 48000
         flush(stream)
         close(stream)
     end
@@ -78,8 +78,8 @@ end
         buf = SampleBuf(rand(eltype(stream), 48000, nchannels(stream.source))*0.1, samplerate(stream))
         t1 = @async read!(stream, buf)
         t2 = @async read!(stream, buf)
-        @test wait(t1) == 48000
-        @test wait(t2) == 48000
+        @test fetch(t1) == 48000
+        @test fetch(t2) == 48000
         close(stream)
     end
 end

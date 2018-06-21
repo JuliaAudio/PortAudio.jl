@@ -1,6 +1,8 @@
 #!/usr/bin/env julia
 
-using Base.Test
+using Compat
+using Compat.Test
+import Compat: Cvoid
 using TestSetExtensions
 using PortAudio
 using SampledSignals
@@ -34,7 +36,7 @@ function setup_callback(inchans, outchans, nframes, synced)
 
     function processfunc()
         ccall(shim_processcb_c, Cint,
-            (Ptr{Float32}, Ptr{Float32}, Culong, Ptr{Void}, Culong, Ptr{Void}),
+            (Ptr{Float32}, Ptr{Float32}, Culong, Ptr{Cvoid}, Culong, Ptr{Cvoid}),
             cb_input, cb_output, nframes, C_NULL, flags, pointer_from_objref(info))
     end
 

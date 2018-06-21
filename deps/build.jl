@@ -1,8 +1,9 @@
 using BinDeps
+using Compat
 
 @BinDeps.setup
 
-ENV["JULIA_ROOT"] = abspath(JULIA_HOME, "../../")
+ENV["JULIA_ROOT"] = abspath(Compat.Sys.BINDIR, "../../")
 
 # include alias for WinRPM library
 libportaudio = library_dependency("libportaudio", aliases=["libportaudio-2"])

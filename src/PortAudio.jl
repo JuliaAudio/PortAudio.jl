@@ -1,29 +1,25 @@
-__precompile__()
+__precompile__(true)
 
 module PortAudio
 
 using SampledSignals
 using RingBuffers
-#using Suppressor
+using Compat
+import Compat: undef, fetch, @compat
+import Compat.LinearAlgebra: transpose!
 
 import Base: eltype, show
 import Base: close, isopen
 import Base: read, read!, write, flush
+
+export PortAudioStream
+
 
 # Get binary dependencies loaded from BinDeps
 include("../deps/deps.jl")
 include("suppressor.jl")
 include("pa_shim.jl")
 include("libportaudio.jl")
-
-function __init__()
-    init_pa_shim()
-    global const notifycb_c = cfunction(notifycb, Cint, (Ptr{Void}, ))
-    # initialize PortAudio on module load
-    @suppress_err Pa_Initialize()
-end
-
-export PortAudioStream
 
 # These sizes are all in frames
 
@@ -46,7 +42,7 @@ function versioninfo(io::IO=STDOUT)
     println(io, "Shim Source Hash: ", shimhash()[1:10])
 end
 
-type PortAudioDevice
+mutable struct PortAudioDevice
     name::String
     hostapi::String
     maxinchans::Int
@@ -76,7 +72,7 @@ devnames() = join(["\"$(dev.name)\"" for dev in devices()], "\n")
 # PortAudioStream
 ##################
 
-type PortAudioStream{T}
+mutable struct PortAudioStream{T}
     samplerate::Float64
     blocksize::Int
     stream::PaStream
@@ -98,7 +94,7 @@ type PortAudioStream{T}
             Ptr{Pa_StreamParameters}(0) :
             Ref(Pa_StreamParameters(outdev.idx, outchans, type_to_fmt[T], 0.0, C_NULL))
         this = new(sr, blocksize, C_NULL)
-        finalizer(this, close)
+        @compat finalizer(close, this)
         this.sink = PortAudioSink{T}(outdev.name, this, outchans, blocksize*2)
         this.source = PortAudioSource{T}(indev.name, this, inchans, blocksize*2)
         this.errbuf = RingBuffer{pa_shim_errmsg_t}(1, ERR_BUFSIZE)
@@ -127,6 +123,7 @@ type PortAudioStream{T}
     end
 end
 
+# this is the top-level outer constructor that all the other outer constructors end up calling
 """
     PortAudioStream(inchannels=2, outchannels=2; options...)
     PortAudioStream(duplexdevice, inchannels=2, outchannels=2; options...)
@@ -150,8 +147,6 @@ Options:
                   `false`, you are free to read and write separately, but
                   overflow or underflow can affect the round-trip latency.
 """
-# this is the top-level outer constructor that all the other outer constructors
-# end up calling
 function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
         inchans=2, outchans=2; eltype=Float32, samplerate=-1, blocksize=DEFAULT_BLOCKSIZE, synced=false)
     if samplerate == -1
@@ -226,7 +221,7 @@ end
 isopen(stream::PortAudioStream) = stream.stream != C_NULL
 
 SampledSignals.samplerate(stream::PortAudioStream) = stream.samplerate
-eltype{T}(stream::PortAudioStream{T}) = T
+eltype(stream::PortAudioStream{T}) where T = T
 
 read(stream::PortAudioStream, args...) = read(stream.source, args...)
 read!(stream::PortAudioStream, args...) = read!(stream.source, args...)
@@ -253,7 +248,7 @@ Handle errors coming over the error stream from PortAudio. This is run as an
 independent task while the stream is active.
 """
 function handle_errors(stream::PortAudioStream)
-    err = Vector{pa_shim_errmsg_t}(1)
+    err = Vector{pa_shim_errmsg_t}(undef, 1)
     while true
         nread = read!(stream.errbuf, err)
         nread == 1 || break
@@ -279,7 +274,7 @@ end
 # Define our source and sink types
 for (TypeName, Super) in ((:PortAudioSink, :SampleSink),
                           (:PortAudioSource, :SampleSource))
-    @eval type $TypeName{T} <: $Super
+    @eval mutable struct $TypeName{T} <: $Super
         name::String
         stream::PortAudioStream{T}
         chunkbuf::Array{T, 2}
@@ -319,7 +314,7 @@ function SampledSignals.unsafe_write(sink::PortAudioSink, buf::Array, frameoffse
         towrite = min(framecount-nwritten, CHUNKSIZE)
         # make a buffer of interleaved samples
         transpose!(view(sink.chunkbuf, :, 1:towrite),
-                   view(buf, (1:towrite)+nwritten+frameoffset, :))
+                   view(buf, (1:towrite) .+ nwritten .+ frameoffset, :))
         n = write(sink.ringbuf, sink.chunkbuf, towrite)
         nwritten += n
         # break early if the stream is closed
@@ -335,7 +330,7 @@ function SampledSignals.unsafe_read!(source::PortAudioSource, buf::Array, frameo
         toread = min(framecount-nread, CHUNKSIZE)
         n = read!(source.ringbuf, source.chunkbuf, toread)
         # de-interleave the samples
-        transpose!(view(buf, (1:toread)+nread+frameoffset, :),
+        transpose!(view(buf, (1:toread) .+ nread .+ frameoffset, :),
                    view(source.chunkbuf, :, 1:toread))
 
         nread += toread
@@ -346,9 +341,43 @@ function SampledSignals.unsafe_read!(source::PortAudioSource, buf::Array, frameo
     nread
 end
 
+
+const libpa_shim = find_pa_shim()
+
+"""
+    PortAudio.shimhash()
+
+Return the sha256 hash(as a string) of the source file used to build the shim.
+We may use this sometime to verify that the distributed binary stays in sync
+with the rest of the package.
+"""
+shimhash() = unsafe_string(ccall((:pa_shim_getsourcehash, libpa_shim), Cstring, ()))
+
+
 # this is called by the shim process callback to notify that there is new data.
 # it's run in the audio context so don't do anything besides wake up the
 # AsyncCondition handle associated with that ring buffer
-notifycb(handle) = ccall(:uv_async_send, Cint, (Ptr{Void}, ), handle)
+notifycb(handle) = ccall(:uv_async_send, Cint, (Ptr{Cvoid},), handle)
+
+global shim_processcb_c, notifycb_c
+
+function set_global_callbacks()
+    shim_dlib = Libdl.dlopen(libpa_shim)
+
+    # pointer to the shim's process callback
+    global shim_processcb_c = Libdl.dlsym(shim_dlib, :pa_shim_processcb)
+    if shim_processcb_c == C_NULL
+        error("Got NULL pointer loading `pa_shim_processcb`")
+    end
+
+    global notifycb_c = @cfunction notifycb Cint (Ptr{Cvoid},)
+end
+
+function __init__()
+    set_global_callbacks()
+
+    # initialize PortAudio on module load
+    @suppress_err Pa_Initialize()
+end
 
 end # module PortAudio
