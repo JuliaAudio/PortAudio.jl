@@ -9,7 +9,7 @@ function micmeter(metersize)
     println("Press Ctrl-C to quit")
     while true
         block = read(mic, 512)
-        blockmax = maximum(abs(block)) # find the maximum value in the block
+        blockmax = maximum(abs.(block)) # find the maximum value in the block
         signalmax = max(signalmax, blockmax) # keep the maximum value ever
         print("\r") # reset the cursor to the beginning of the line
         printmeter(metersize, blockmax, signalmax)

@@ -14,7 +14,7 @@ const fs = Float32[float(f) for f in domain(fft(buf)[fmin..fmax])]
 
 while true
     read!(stream, buf)
-    plot(fs, abs(fft(buf)[fmin..fmax]), xlim=(fs[1],fs[end]), ylim=(0,100))
+    plot(fs, abs.(fft(buf)[fmin..fmax]), xlim=(fs[1],fs[end]), ylim=(0,100))
 end
 
 end
