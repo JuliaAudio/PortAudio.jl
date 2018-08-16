@@ -16,3 +16,6 @@ else
     Pkg.add(PackageSpec(name="SampledSignals", rev="master"))
     Pkg.add(PackageSpec(name="RingBuffers", rev="master"))
 end
+
+# add test deps manually because we'll be running test/runtests.jl manually
+Pkg.add("Compat")
