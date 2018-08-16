@@ -4,6 +4,7 @@ module PortAudio
 
 using SampledSignals
 using RingBuffers
+import Libdl
 #using Suppressor
 
 import Base: eltype, show
@@ -16,9 +17,16 @@ include("suppressor.jl")
 include("pa_shim.jl")
 include("libportaudio.jl")
 
+const notifycb_c = Ref{Ptr{Cvoid}}(0)
+
+# this is called by the shim process callback to notify that there is new data.
+# it's run in the audio context so don't do anything besides wake up the
+# AsyncCondition handle associated with that ring buffer
+notifycb(handle) = ccall(:uv_async_send, Cint, (Ptr{Nothing}, ), handle)
+
 function __init__()
     init_pa_shim()
-    global const notifycb_c = cfunction(notifycb, Cint, (Ptr{Void}, ))
+    notifycb_c[] = @cfunction(notifycb, Cint, (Ptr{Nothing}, ))
     # initialize PortAudio on module load
     @suppress_err Pa_Initialize()
 end
@@ -40,13 +48,13 @@ const CHUNKSIZE=128
 # ringbuffer to receive errors from the audio processing thread
 const ERR_BUFSIZE=512
 
-function versioninfo(io::IO=STDOUT)
+function versioninfo(io::IO=stdout)
     println(io, Pa_GetVersionText())
     println(io, "Version: ", Pa_GetVersion())
-    println(io, "Shim Source Hash: ", shimhash()[1:10])
+    #println(io, "Shim Source Hash: ", shimhash()[1:10])
 end
 
-type PortAudioDevice
+mutable struct PortAudioDevice
     name::String
     hostapi::String
     maxinchans::Int
@@ -76,7 +84,7 @@ devnames() = join(["\"$(dev.name)\"" for dev in devices()], "\n")
 # PortAudioStream
 ##################
 
-type PortAudioStream{T}
+mutable struct PortAudioStream{T}
     samplerate::Float64
     blocksize::Int
     stream::PaStream
@@ -111,13 +119,13 @@ type PortAudioStream{T}
                 inchans > 0 ? bufpointer(this.source) : C_NULL,
                 outchans > 0 ? bufpointer(this.sink) : C_NULL,
                 pointer(this.errbuf),
-                synced, notifycb_c,
+                synced, notifycb_c[],
                 inchans > 0 ? notifyhandle(this.source) : C_NULL,
                 outchans > 0 ? notifyhandle(this.sink) : C_NULL,
                 notifyhandle(this.errbuf))
         this.stream = @suppress_err Pa_OpenStream(inparams, outparams,
                                                   float(sr), blocksize,
-                                                  paNoFlag, shim_processcb_c,
+                                                  paNoFlag, shim_processcb_c[],
                                                   this.bufinfo)
 
         Pa_StartStream(this.stream)
@@ -226,7 +234,7 @@ end
 isopen(stream::PortAudioStream) = stream.stream != C_NULL
 
 SampledSignals.samplerate(stream::PortAudioStream) = stream.samplerate
-eltype{T}(stream::PortAudioStream{T}) = T
+eltype(stream::PortAudioStream{T}) where {T} = T
 
 read(stream::PortAudioStream, args...) = read(stream.source, args...)
 read!(stream::PortAudioStream, args...) = read!(stream.source, args...)
@@ -279,7 +287,7 @@ end
 # Define our source and sink types
 for (TypeName, Super) in ((:PortAudioSink, :SampleSink),
                           (:PortAudioSource, :SampleSource))
-    @eval type $TypeName{T} <: $Super
+    @eval mutable struct $TypeName{T} <: $Super
         name::String
         stream::PortAudioStream{T}
         chunkbuf::Array{T, 2}
@@ -345,10 +353,5 @@ function SampledSignals.unsafe_read!(source::PortAudioSource, buf::Array, frameo
 
     nread
 end
-
-# this is called by the shim process callback to notify that there is new data.
-# it's run in the audio context so don't do anything besides wake up the
-# AsyncCondition handle associated with that ring buffer
-notifycb(handle) = ccall(:uv_async_send, Cint, (Ptr{Void}, ), handle)
 
 end # module PortAudio
