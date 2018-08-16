@@ -1,5 +1,6 @@
 using BinDeps
 using Compat
+using Compat.Sys: isapple, iswindows
 
 @BinDeps.setup
 
@@ -13,12 +14,12 @@ provides(AptGet, "libportaudio2", libportaudio)
 provides(Pacman, "portaudio", libportaudio)
 
 
-@static if is_apple()
+@static if isapple()
     using Homebrew
     provides(Homebrew.HB, "portaudio", libportaudio)
 end
 
-@static if is_windows()
+@static if iswindows()
     using WinRPM
     provides(WinRPM.RPM, "libportaudio2", libportaudio, os = :Windows)
 end
