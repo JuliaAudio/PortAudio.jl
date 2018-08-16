@@ -1,6 +1,6 @@
 #!/usr/bin/env julia
 
-using Base.Test
+using Test
 using TestSetExtensions
 using PortAudio
 using SampledSignals
