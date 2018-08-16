@@ -3,12 +3,27 @@ language: julia
 os:
   - linux
   - osx
-sudo: required
 julia:
   - 0.6
+  - 0.7
+  - 1.0
   - nightly
+matrix:
+  allow_failures:
+    - julia: nightly
+  fast_finish: true
+branches:
+  only:
+    master
 notifications:
   email: false
 script:
  - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
- - julia -e 'Pkg.clone(pwd()); Pkg.build("PortAudio"); Pkg.test("PortAudio")'
+ - julia --color=yes ci_setup.jl
+ - julia --color=yes --code-coverage test/runtests.jl
+after_success:
+  - julia -e 'VERSION >= v"0.7.0-" && using Pkg;
+        VERSION < v"0.7.0-" && cd(Pkg.dir("PortAudio"));
+        Pkg.add("Coverage");
+        using Coverage;
+        Codecov.submit(process_folder())'

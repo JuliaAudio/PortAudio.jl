@@ -8,6 +8,7 @@ using Compat
 using Compat: undef, fetch, @compat
 using Compat.LinearAlgebra: transpose!
 using Compat: stdout
+using Compat.Sys: iswindows
 
 import Base: eltype, show
 import Base: close, isopen
@@ -374,7 +375,7 @@ function set_global_callbacks()
 end
 
 function suppress_err(dofunc::Function)
-    nullfile = @static Sys.iswindows() ? "nul" : "/dev/null"
+    nullfile = @static iswindows() ? "nul" : "/dev/null"
     open(nullfile, "w") do io
         redirect_stdout(dofunc, io)
     end

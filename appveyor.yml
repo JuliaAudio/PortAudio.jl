@@ -1,14 +1,27 @@
 environment:
   matrix:
-  - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x86/0.6/julia-0.6-latest-win32.exe"
-  - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x64/0.6/julia-0.6-latest-win64.exe"
-  - JULIA_URL: "https://julialangnightlies-s3.julialang.org/bin/winnt/x64/julia-latest-win64.exe"
+    - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x86/0.6/julia-0.6-latest-win32.exe"
+    - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x64/0.6/julia-0.6-latest-win64.exe"
+    - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x86/0.7/julia-0.7-latest-win32.exe"
+    - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x64/0.7/julia-0.7-latest-win64.exe"
+    - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x86/1.0/julia-1.0-latest-win32.exe"
+    - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x64/1.0/julia-1.0-latest-win64.exe"
+
+matrix:
+  allow_failures:
+    # currently failing on 1.0 until https://github.com/JuliaLang/METADATA.jl/pull/16370 is merged
+    - JULIA_URL: "https://julialang-s3.julialang.org/bin/winnt/x64/1.0/julia-1.0-latest-win64.exe"
 
 notifications:
   - provider: Email
     on_build_success: false
     on_build_failure: false
     on_build_status_changed: false
+
+# only build master and PRs
+branches:
+  only:
+    - master
 
 install:
   - ps: "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12"
@@ -22,8 +35,8 @@ install:
 build_script:
 # Need to convert from shallow to complete for Pkg.clone to work
   - IF EXIST .git\shallow (git fetch --unshallow)
-  - C:\projects\julia\bin\julia -e "versioninfo();
-      Pkg.clone(pwd(), \"PortAudio\"); Pkg.build(\"PortAudio\")"
+  - C:\projects\julia\bin\julia --color=yes ci_setup.jl
 
 test_script:
-  - C:\projects\julia\bin\julia --check-bounds=yes -e "Pkg.test(\"PortAudio\")"
+  # - C:\projects\julia\bin\julia --check-bounds=yes -e "Pkg.test(\"SampledSignals\")"
+  - C:\projects\julia\bin\julia --color=yes --code-coverage --check-bounds=yes test/runtests.jl

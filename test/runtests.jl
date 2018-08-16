@@ -52,7 +52,11 @@ function test_callback(inchans, outchans, synced)
         write(sinkbuf, testout) # fill the output ringbuffer
     end
     # the process closure only has a pointer (not a ref) to sinkbuf
-    GC.@preserve sinkbuf begin
+    @static if VERSION >= v"0.7.0-"
+        GC.@preserve sinkbuf begin
+            @test process() == PortAudio.paContinue
+        end
+    else
         @test process() == PortAudio.paContinue
     end
     if outchans > 0
