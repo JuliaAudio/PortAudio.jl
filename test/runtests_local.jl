@@ -16,7 +16,7 @@ elseif Compat.Sys.islinux()
     default_outdev = "default"
 end
 
-@testset ExtendedTestSet "Local Tests" begin
+@testset "Local Tests" begin
     @testset "Open Default Device" begin
         println("Recording...")
         stream = PortAudioStream(2, 0)

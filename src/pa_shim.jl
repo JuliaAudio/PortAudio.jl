@@ -1,5 +1,5 @@
 function find_pa_shim()
-    libdir = joinpath(dirname(@__FILE__), "..", "deps", "usr", "lib")
+    libdir = joinpath(@__DIR__, "..", "deps", "usr", "lib")
     libsuffix = ""
     basename = "pa_shim"
     @static if Compat.Sys.islinux() && Sys.ARCH == :x86_64
@@ -43,5 +43,3 @@ mutable struct pa_shim_info_t
     outputhandle::Ptr{Cvoid} # condition to notify when ready for output
     errorhandle::Ptr{Cvoid} # condition to notify on new errors
 end
-
-Base.unsafe_convert(::Type{Ptr{Cvoid}}, info::pa_shim_info_t) = pointer_from_objref(info)

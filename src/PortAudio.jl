@@ -5,8 +5,9 @@ module PortAudio
 using SampledSignals
 using RingBuffers
 using Compat
-import Compat: undef, fetch, @compat
-import Compat.LinearAlgebra: transpose!
+using Compat: undef, fetch, @compat
+using Compat.LinearAlgebra: transpose!
+using Compat: stdout
 
 import Base: eltype, show
 import Base: close, isopen
@@ -17,7 +18,6 @@ export PortAudioStream
 
 # Get binary dependencies loaded from BinDeps
 include("../deps/deps.jl")
-include("suppressor.jl")
 include("pa_shim.jl")
 include("libportaudio.jl")
 
@@ -36,7 +36,7 @@ const CHUNKSIZE=128
 # ringbuffer to receive errors from the audio processing thread
 const ERR_BUFSIZE=512
 
-function versioninfo(io::IO=STDOUT)
+function versioninfo(io::IO=stdout)
     println(io, Pa_GetVersionText())
     println(io, "Version: ", Pa_GetVersion())
     println(io, "Shim Source Hash: ", shimhash()[1:10])
@@ -111,10 +111,10 @@ mutable struct PortAudioStream{T}
                 inchans > 0 ? notifyhandle(this.source) : C_NULL,
                 outchans > 0 ? notifyhandle(this.sink) : C_NULL,
                 notifyhandle(this.errbuf))
-        this.stream = @suppress_err Pa_OpenStream(inparams, outparams,
-                                                  float(sr), blocksize,
-                                                  paNoFlag, shim_processcb_c,
-                                                  this.bufinfo)
+        this.stream = suppress_err() do
+            Pa_OpenStream(inparams, outparams, float(sr), blocksize, paNoFlag,
+                          shim_processcb_c, this.bufinfo)
+        end
 
         Pa_StartStream(this.stream)
         @async handle_errors(this)
@@ -357,7 +357,7 @@ shimhash() = unsafe_string(ccall((:pa_shim_getsourcehash, libpa_shim), Cstring, 
 # this is called by the shim process callback to notify that there is new data.
 # it's run in the audio context so don't do anything besides wake up the
 # AsyncCondition handle associated with that ring buffer
-notifycb(handle) = ccall(:uv_async_send, Cint, (Ptr{Cvoid},), handle)
+notifycb(handle) = ccall(:uv_async_send, Cint, (Ref{Cvoid},), handle)
 
 global shim_processcb_c, notifycb_c
 
@@ -373,11 +373,20 @@ function set_global_callbacks()
     global notifycb_c = @cfunction notifycb Cint (Ptr{Cvoid},)
 end
 
+function suppress_err(dofunc::Function)
+    nullfile = @static Sys.iswindows() ? "nul" : "/dev/null"
+    open(nullfile, "w") do io
+        redirect_stdout(dofunc, io)
+    end
+end
+
 function __init__()
     set_global_callbacks()
 
     # initialize PortAudio on module load
-    @suppress_err Pa_Initialize()
+    suppress_err() do
+        Pa_Initialize()
+    end
 end
 
 end # module PortAudio

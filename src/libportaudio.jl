@@ -159,18 +159,13 @@ end
 function Pa_OpenStream(inParams, outParams,
                        sampleRate, framesPerBuffer,
                        flags::PaStreamFlags,
-                       callback, userdata)
+                       callback, userdata::T) where T
     streamPtr = Ref{PaStream}(0)
     err = ccall((:Pa_OpenStream, libportaudio), PaError,
-                (Ref{PaStream},
-                Ptr{Pa_StreamParameters},
-                Ptr{Pa_StreamParameters},
-                Cdouble, Culong, PaStreamFlags,
-                Ptr{Cvoid}, Ptr{Cvoid}),
-                streamPtr,
-                inParams, outParams,
-                sampleRate, framesPerBuffer, flags,
-                callback, userdata)
+                (Ref{PaStream}, Ref{Pa_StreamParameters}, Ref{Pa_StreamParameters},
+                Cdouble, Culong, PaStreamFlags, Ref{Cvoid}, Ref{T}),
+                streamPtr, inParams, outParams,
+                sampleRate, framesPerBuffer, flags, callback, userdata)
     handle_status(err)
     streamPtr[]
 end
@@ -211,7 +206,7 @@ function Pa_ReadStream(stream::PaStream, buf::Array, frames::Integer=length(buf)
                        show_warnings::Bool=true)
     frames <= length(buf) || error("Need a buffer at least $frames long")
     err = ccall((:Pa_ReadStream, libportaudio), PaError,
-                (PaStream, Ptr{Cvoid}, Culong),
+                (PaStream, Ref{Cvoid}, Culong),
                 stream, buf, frames)
     handle_status(err, show_warnings)
     buf
@@ -221,7 +216,7 @@ function Pa_WriteStream(stream::PaStream, buf::Array, frames::Integer=length(buf
                         show_warnings::Bool=true)
     frames <= length(buf) || error("Need a buffer at least $frames long")
     err = ccall((:Pa_WriteStream, libportaudio), PaError,
-                (PaStream, Ptr{Cvoid}, Culong),
+                (PaStream, Ref{Cvoid}, Culong),
                 stream, buf, frames)
     handle_status(err, show_warnings)
     nothing

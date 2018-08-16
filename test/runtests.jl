@@ -3,7 +3,6 @@
 using Compat
 using Compat.Test
 import Compat: Cvoid
-using TestSetExtensions
 using PortAudio
 using SampledSignals
 using RingBuffers
@@ -36,8 +35,8 @@ function setup_callback(inchans, outchans, nframes, synced)
 
     function processfunc()
         ccall(shim_processcb_c, Cint,
-            (Ptr{Float32}, Ptr{Float32}, Culong, Ptr{Cvoid}, Culong, Ptr{Cvoid}),
-            cb_input, cb_output, nframes, C_NULL, flags, pointer_from_objref(info))
+            (Ref{Float32}, Ref{Float32}, Culong, Ref{Cvoid}, Culong, Ref{pa_shim_info_t}),
+            cb_input, cb_output, nframes, C_NULL, flags, info)
     end
 
     (sourcebuf, sinkbuf, errbuf, cb_input, cb_output, processfunc)
@@ -52,7 +51,10 @@ function test_callback(inchans, outchans, synced)
         testout = rand(Float32, outchans, nframes) # generate some test data to play
         write(sinkbuf, testout) # fill the output ringbuffer
     end
-    @test process() == PortAudio.paContinue
+    # the process closure only has a pointer (not a ref) to sinkbuf
+    GC.@preserve sinkbuf begin
+        @test process() == PortAudio.paContinue
+    end
     if outchans > 0
         # testout -> sinkbuf -> cb_output
         @test cb_output == testout
@@ -179,7 +181,7 @@ function test_callback_overflow(inchans, outchans, synced)
     end
 end
 
-@testset ExtendedTestSet "PortAudio Tests" begin
+@testset "PortAudio Tests" begin
     @testset "Reports version" begin
         io = IOBuffer()
         PortAudio.versioninfo(io)
