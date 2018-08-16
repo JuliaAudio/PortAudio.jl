@@ -9,8 +9,8 @@ const PaHostApiIndex = Cint
 const PaHostApiTypeId = Cint
 # PaStream is always used as an opaque type, so we're always dealing
 # with the pointer
-const PaStream = Ptr{Void}
-const PaStreamCallback = Void
+const PaStream = Ptr{Nothing}
+const PaStreamCallback = Nothing
 const PaStreamFlags = Culong
 
 const paNoFlag = PaStreamFlags(0x00)
@@ -86,7 +86,7 @@ const pa_host_api_names = Dict{PaHostApiTypeId, String}(
     14 => "AudioScience HPI"
 )
 
-type PaHostApiInfo
+mutable struct PaHostApiInfo
     struct_version::Cint
     api_type::PaHostApiTypeId
     name::Ptr{Cchar}
@@ -100,7 +100,7 @@ Pa_GetHostApiInfo(i) = unsafe_load(ccall((:Pa_GetHostApiInfo, libportaudio),
 
 # Device Functions
 
-type PaDeviceInfo
+mutable struct PaDeviceInfo
     struct_version::Cint
     name::Ptr{Cchar}
     host_api::PaHostApiIndex
@@ -126,15 +126,15 @@ Pa_GetDefaultOutputDevice() = ccall((:Pa_GetDefaultOutputDevice, libportaudio),
 
 # Stream Functions
 
-type Pa_StreamParameters
+mutable struct Pa_StreamParameters
     device::PaDeviceIndex
     channelCount::Cint
     sampleFormat::PaSampleFormat
     suggestedLatency::PaTime
-    hostAPISpecificStreamInfo::Ptr{Void}
+    hostAPISpecificStreamInfo::Ptr{Nothing}
 end
 
-type PaStreamInfo
+mutable struct PaStreamInfo
     structVersion::Cint
     inputLatency::PaTime
     outputLatency::PaTime
@@ -148,7 +148,7 @@ end
 #     err = ccall((:Pa_OpenDefaultStream, libportaudio),
 #                 PaError, (Ref{PaStream}, Cint, Cint,
 #                           PaSampleFormat, Cdouble, Culong,
-#                           Ref{Void}, Ref{Void}),
+#                           Ref{Nothing}, Ref{Nothing}),
 #                 streamPtr, inChannels, outChannels, sampleFormat, sampleRate,
 #                 framesPerBuffer, C_NULL, C_NULL)
 #     handle_status(err)
@@ -166,7 +166,7 @@ function Pa_OpenStream(inParams, outParams,
                 Ptr{Pa_StreamParameters},
                 Ptr{Pa_StreamParameters},
                 Cdouble, Culong, PaStreamFlags,
-                Ptr{Void}, Ptr{Void}),
+                Ptr{Nothing}, Ptr{Nothing}),
                 streamPtr,
                 inParams, outParams,
                 sampleRate, framesPerBuffer, flags,
@@ -211,7 +211,7 @@ function Pa_ReadStream(stream::PaStream, buf::Array, frames::Integer=length(buf)
                        show_warnings::Bool=true)
     frames <= length(buf) || error("Need a buffer at least $frames long")
     err = ccall((:Pa_ReadStream, libportaudio), PaError,
-                (PaStream, Ptr{Void}, Culong),
+                (PaStream, Ptr{Nothing}, Culong),
                 stream, buf, frames)
     handle_status(err, show_warnings)
     buf
@@ -221,7 +221,7 @@ function Pa_WriteStream(stream::PaStream, buf::Array, frames::Integer=length(buf
                         show_warnings::Bool=true)
     frames <= length(buf) || error("Need a buffer at least $frames long")
     err = ccall((:Pa_WriteStream, libportaudio), PaError,
-                (PaStream, Ptr{Void}, Culong),
+                (PaStream, Ptr{Nothing}, Culong),
                 stream, buf, frames)
     handle_status(err, show_warnings)
     nothing

@@ -1,0 +1,238 @@
+[[AbstractFFTs]]
+deps = ["Compat", "LinearAlgebra"]
+git-tree-sha1 = "8d59c3b1463b5e0ad05a3698167f85fac90e184d"
+uuid = "621f4979-c628-5d54-868e-fcf4e3e8185c"
+version = "0.3.2"
+
+[[Base64]]
+uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
+
+[[BinDeps]]
+deps = ["Compat", "Libdl", "SHA", "URIParser"]
+git-tree-sha1 = "a6e1f6b5818ef909cda3a7011dd97c3dac6dc369"
+uuid = "9e28174c-4ba2-5203-b857-d8d62c4213ee"
+version = "0.8.9"
+
+[[BinaryProvider]]
+deps = ["Libdl", "Pkg", "SHA", "Test"]
+git-tree-sha1 = "ffbf89cc49b073cffdb91381b7ee60557a03ec96"
+uuid = "b99e7846-7c00-51b0-8f62-c81ae34c0232"
+version = "0.4.1"
+
+[[BufferedStreams]]
+deps = ["Compat", "Pkg", "Test"]
+git-tree-sha1 = "5d55b9486590fdda5905c275bb21ce1f0754020f"
+uuid = "e1450e63-4bb3-523b-b2a4-4ffa8c0fd77d"
+version = "1.0.0"
+
+[[Compat]]
+deps = ["Base64", "Dates", "DelimitedFiles", "Distributed", "InteractiveUtils", "LibGit2", "Libdl", "LinearAlgebra", "Markdown", "Mmap", "Pkg", "Printf", "REPL", "Random", "Serialization", "SharedArrays", "Sockets", "SparseArrays", "Statistics", "Test", "UUIDs", "Unicode"]
+git-tree-sha1 = "277d3807440d9793421354b6680911fc95d91a84"
+uuid = "34da2185-b29b-5c13-b0c7-acf172513d20"
+version = "1.0.1"
+
+[[Conda]]
+deps = ["Compat", "JSON", "VersionParsing"]
+git-tree-sha1 = "a47f9a2c7b80095e6a935536795635522fe27f5d"
+uuid = "8f4d0f93-b110-5947-807f-2305c1781a2d"
+version = "1.0.1"
+
+[[DSP]]
+deps = ["AbstractFFTs", "Compat", "FFTW", "LinearAlgebra", "Pkg", "Polynomials", "Random", "Reexport", "SpecialFunctions"]
+git-tree-sha1 = "c90967ff4c5e99f652b278624634dcef73b58848"
+uuid = "717857b8-e6f2-59f4-9121-6e50c889abd2"
+version = "0.5.1"
+
+[[Dates]]
+deps = ["Printf"]
+uuid = "ade2ca70-3891-5945-98fb-dc099432e06a"
+
+[[DelimitedFiles]]
+deps = ["Mmap"]
+uuid = "8bb1440f-4735-579b-a4ab-409b98df4dab"
+
+[[Distributed]]
+deps = ["LinearAlgebra", "Random", "Serialization", "Sockets"]
+uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
+
+[[FFTW]]
+deps = ["AbstractFFTs", "BinaryProvider", "Compat", "Conda", "Libdl", "LinearAlgebra", "Pkg", "Reexport", "Test"]
+git-tree-sha1 = "29cda58afbf62f35b1a094882ad6c745a47b2eaa"
+uuid = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
+version = "0.2.4"
+
+[[FixedPointNumbers]]
+deps = ["Pkg", "Test"]
+git-tree-sha1 = "31cbf24d537a217475b37274df05de09882b53f1"
+uuid = "53c48c17-4a7d-5ca2-90c5-79b7896eea93"
+version = "0.5.2"
+
+[[HTTPClient]]
+deps = ["Compat", "LibCURL"]
+git-tree-sha1 = "161d5776ae8e585ac0b8c20fb81f17ab755b3671"
+uuid = "0862f596-cf2d-50af-8ef4-f2be67dfa83f"
+version = "0.2.1"
+
+[[Homebrew]]
+deps = ["BinDeps", "InteractiveUtils", "JSON", "Libdl", "Test", "Unicode"]
+git-tree-sha1 = "5582ec74f735cf8d12e562a2e65c47f34063bd51"
+uuid = "d9be37ee-ecc9-5288-90f1-b9ca67657a75"
+version = "0.7.0"
+
+[[InteractiveUtils]]
+deps = ["LinearAlgebra", "Markdown"]
+uuid = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
+
+[[IntervalSets]]
+deps = ["Compat"]
+git-tree-sha1 = "d488eaaac00c8ea66423773e5a86ac81b9ac03e0"
+uuid = "8197267c-284f-5f27-9208-e0e47529a953"
+version = "0.2.0"
+
+[[JSON]]
+deps = ["Dates", "Distributed", "Mmap", "Pkg", "Sockets", "Test", "Unicode"]
+git-tree-sha1 = "fec8e4d433072731466d37ed0061b3ba7f70eeb9"
+uuid = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+version = "0.19.0"
+
+[[LibCURL]]
+deps = ["BinaryProvider", "Compat", "Libdl", "Pkg"]
+git-tree-sha1 = "4f00f8f8bf59e2731ccd6929c33c436ed5d7765f"
+uuid = "b27032c2-a3e7-50c8-80cd-2d36dbcbfd21"
+version = "0.3.0"
+
+[[LibExpat]]
+deps = ["Compat"]
+git-tree-sha1 = "8ba2ca1635ec1755bcf1432c9a2aa6c91a3fb4fd"
+uuid = "522f3ed2-3f36-55e3-b6df-e94fee9b0c07"
+version = "0.4.2"
+
+[[LibGit2]]
+uuid = "76f85450-5226-5b5a-8eaa-529ad045b433"
+
+[[Libdl]]
+uuid = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
+
+[[Libz]]
+deps = ["BufferedStreams", "Random", "Test"]
+git-tree-sha1 = "d405194ffc0293c3519d4f7251ce51baac9cc871"
+uuid = "2ec943e9-cfe8-584d-b93d-64dcb6d567b7"
+version = "1.0.0"
+
+[[LinearAlgebra]]
+deps = ["Libdl"]
+uuid = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+
+[[Logging]]
+uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
+
+[[Markdown]]
+deps = ["Base64"]
+uuid = "d6f4376e-aef5-505a-96c1-9c027394607a"
+
+[[Mmap]]
+uuid = "a63ad114-7e13-5084-954f-fe012c677804"
+
+[[Pkg]]
+deps = ["Dates", "LibGit2", "Markdown", "Printf", "REPL", "Random", "SHA", "UUIDs"]
+uuid = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
+
+[[Polynomials]]
+deps = ["LinearAlgebra", "SparseArrays", "Test"]
+git-tree-sha1 = "af883752c4935425a3ab30031a2069254c451b8b"
+uuid = "f27b6e38-b328-58d1-80ce-0feddd5e7a45"
+version = "0.5.0"
+
+[[Printf]]
+deps = ["Unicode"]
+uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+
+[[REPL]]
+deps = ["InteractiveUtils", "Markdown", "Sockets"]
+uuid = "3fa0cd96-eef1-5676-8a61-b3b8758bbffb"
+
+[[Random]]
+deps = ["Serialization"]
+uuid = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+
+[[Reexport]]
+deps = ["Pkg"]
+git-tree-sha1 = "7b1d07f411bc8ddb7977ec7f377b97b158514fe0"
+uuid = "189a3867-3050-52da-a836-e630ba90ab69"
+version = "0.2.0"
+
+[[RingBuffers]]
+deps = ["BinaryProvider", "Compat", "InteractiveUtils", "Libdl", "Pkg"]
+git-tree-sha1 = "a4982d62a70daba921a73b9379883b322662ea6a"
+uuid = "f6d8bcc6-4e01-5431-93c4-9d6004abab90"
+version = "1.1.3"
+
+[[SHA]]
+uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+
+[[SampledSignals]]
+deps = ["Compat", "DSP", "FFTW", "FixedPointNumbers", "IntervalSets", "LinearAlgebra", "Unitful"]
+git-tree-sha1 = "0ba084e7e6cef1e1060ab3238c756ebf2f51ece0"
+repo-rev = "master"
+repo-url = "https://github.com/JuliaAudio/SampledSignals.jl"
+uuid = "bd7594eb-a658-542f-9e75-4c4d8908c167"
+version = "1.1.2+"
+
+[[Serialization]]
+uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
+
+[[SharedArrays]]
+deps = ["Distributed", "Mmap", "Random", "Serialization"]
+uuid = "1a1011a3-84de-559e-8e89-a11a2f7dc383"
+
+[[Sockets]]
+uuid = "6462fe0b-24de-5631-8697-dd941f90decc"
+
+[[SparseArrays]]
+deps = ["LinearAlgebra", "Random"]
+uuid = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+
+[[SpecialFunctions]]
+deps = ["BinDeps", "BinaryProvider", "Compat", "Libdl"]
+git-tree-sha1 = "d12f8917be3782f4b800ba16003b8d0d4858c2e5"
+uuid = "276daf66-3868-5448-9aa4-cd146d93841b"
+version = "0.7.0"
+
+[[Statistics]]
+deps = ["LinearAlgebra", "SparseArrays"]
+uuid = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+
+[[Test]]
+deps = ["Distributed", "InteractiveUtils", "Logging", "Random"]
+uuid = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[[URIParser]]
+deps = ["Test", "Unicode"]
+git-tree-sha1 = "6ddf8244220dfda2f17539fa8c9de20d6c575b69"
+uuid = "30578b45-9adc-5946-b283-645ec420af67"
+version = "0.4.0"
+
+[[UUIDs]]
+deps = ["Random"]
+uuid = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
+
+[[Unicode]]
+uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
+
+[[Unitful]]
+deps = ["LinearAlgebra", "Random", "Test", "Unicode"]
+git-tree-sha1 = "6cb0003ad527c476cb48848d2cf205d2bdc8a84e"
+uuid = "1986cc42-f94f-5a68-af5c-568840ba703d"
+version = "0.11.0"
+
+[[VersionParsing]]
+deps = ["Compat"]
+git-tree-sha1 = "c9d5aa108588b978bd859554660c8a5c4f2f7669"
+uuid = "81def892-9a0e-5fdd-b105-ffc91e053289"
+version = "1.1.2"
+
+[[WinRPM]]
+deps = ["BinDeps", "Compat", "HTTPClient", "LibExpat", "Libdl", "Libz", "SHA", "URIParser"]
+git-tree-sha1 = "023faa2430b4ad3f9cf073c03cf100d80630fb6d"
+uuid = "c17dfb99-b4f7-5aad-8812-456da1ad7187"
+version = "0.4.0"

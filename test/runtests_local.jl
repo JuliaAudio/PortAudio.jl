@@ -5,13 +5,13 @@
 include("runtests.jl")
 
 # these default values are specific to my machines
-if is_windows()
+if Sys.iswindows()
     default_indev = "Microphone Array (Realtek High "
     default_outdev = "Speaker/Headphone (Realtek High"
 elseif is_apple()
     default_indev = "Built-in Microph"
     default_outdev = "Built-in Output"
-elseif is_linux()
+elseif Sys.islinux()
     default_indev = "default"
     default_outdev = "default"
 end
