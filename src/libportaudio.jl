@@ -159,13 +159,19 @@ end
 function Pa_OpenStream(inParams, outParams,
                        sampleRate, framesPerBuffer,
                        flags::PaStreamFlags,
-                       callback, userdata::T) where T
+                       callback, userdata)
     streamPtr = Ref{PaStream}(0)
     err = ccall((:Pa_OpenStream, libportaudio), PaError,
                 (Ref{PaStream}, Ref{Pa_StreamParameters}, Ref{Pa_StreamParameters},
-                Cdouble, Culong, PaStreamFlags, Ref{Cvoid}, Ref{T}),
+                Cdouble, Culong, PaStreamFlags, Ref{Cvoid},
+                # it seems like we should be able to use Ref{T} here, with
+                # userdata::T above, and avoid the `pointer_from_objref` below.
+                # that's not working on 0.6 though, and it shouldn't really
+                # matter because userdata should be GC-rooted anyways
+                Ptr{Cvoid}),
                 streamPtr, inParams, outParams,
-                sampleRate, framesPerBuffer, flags, callback, userdata)
+                sampleRate, framesPerBuffer, flags, callback,
+                pointer_from_objref(userdata))
     handle_status(err)
     streamPtr[]
 end
