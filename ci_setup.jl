@@ -4,8 +4,9 @@ versioninfo()
 if VERSION < v"0.7.0-"
     Pkg.clone(pwd(), "PortAudio")
     Pkg.build("PortAudio")
-    # for now we need SampledSignals master
+    # for now we need SampledSignals  and RingBuffers master
     Pkg.checkout("SampledSignals")
+    Pkg.checkout("RingBuffers")
 else
     using Pkg
     # for now we need to `clone` because there's no way to specify the
@@ -13,4 +14,5 @@ else
     Pkg.clone(pwd(), "PortAudio")
     Pkg.build("PortAudio")
     Pkg.add(PackageSpec(name="SampledSignals", rev="master"))
+    Pkg.add(PackageSpec(name="RingBuffers", rev="master"))
 end
