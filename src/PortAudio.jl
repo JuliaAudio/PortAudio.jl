@@ -213,6 +213,7 @@ function close(stream::PortAudioStream)
         Pa_CloseStream(stream.stream)
         close(stream.source)
         close(stream.sink)
+        close(stream.errbuf)
         stream.stream = C_NULL
     end
 
