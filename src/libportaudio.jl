@@ -168,7 +168,7 @@ function Pa_OpenStream(inParams, outParams,
                 # userdata::T above, and avoid the `pointer_from_objref` below.
                 # that's not working on 0.6 though, and it shouldn't really
                 # matter because userdata should be GC-rooted anyways
-                Ptr{Cvoid}),
+                Ptr{Void}),
                 streamPtr, inParams, outParams,
                 sampleRate, framesPerBuffer, flags, callback,
                 pointer_from_objref(userdata))

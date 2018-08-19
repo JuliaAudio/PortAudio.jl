@@ -7,7 +7,7 @@ using RingBuffers
 using Compat
 using Compat: undef, fetch, @compat
 using Compat.LinearAlgebra: transpose!
-using Compat: stdout
+using Compat: stdout, @warn
 using Compat.Sys: iswindows
 
 import Base: eltype, show
@@ -95,13 +95,15 @@ mutable struct PortAudioStream{T}
             Ptr{Pa_StreamParameters}(0) :
             Ref(Pa_StreamParameters(outdev.idx, outchans, type_to_fmt[T], 0.0, C_NULL))
         this = new(sr, blocksize, C_NULL)
-        @compat finalizer(close, this)
+        @compat finalizer(this) do x
+            close(x)
+        end
         this.sink = PortAudioSink{T}(outdev.name, this, outchans, blocksize*2)
         this.source = PortAudioSource{T}(indev.name, this, inchans, blocksize*2)
         this.errbuf = RingBuffer{pa_shim_errmsg_t}(1, ERR_BUFSIZE)
         if synced && inchans > 0 && outchans > 0
             # we've got a synchronized duplex stream. initialize with the output buffer full
-            write(this.sink, SampleBuf(zeros(T, blocksize*2, outchans), sr))
+            write(this.sink, zeros(T, blocksize*2, outchans))
         end
         # pass NULL for input/output we're not using
         this.bufinfo = pa_shim_info_t(
@@ -253,18 +255,17 @@ function handle_errors(stream::PortAudioStream)
     err = Vector{pa_shim_errmsg_t}(undef, 1)
     while true
         nread = read!(stream.errbuf, err)
-        nread == 1 || break
+        nread == 1 || break # stream is closed
         if err[1] == PA_SHIM_ERRMSG_ERR_OVERFLOW
-            warn("Error buffer overflowed on stream $(stream.name)")
+            @warn "Error buffer overflowed on PortAudio stream"
         elseif err[1] == PA_SHIM_ERRMSG_OVERFLOW
             # warn("Input overflowed from $(name(stream.source))")
         elseif err[1] == PA_SHIM_ERRMSG_UNDERFLOW
             # warn("Output underflowed to $(name(stream.sink))")
         else
-            error("""
-                Got unrecognized error code $(err[1]) from audio thread for
-                stream "$(stream.name)". Please file an issue at
-                https://github.com/juliaaudio/portaudio.jl/issues""")
+            throw(ErrorException("""
+                Got unrecognized error code $(err[1]) from audio thread. Please
+                file an issue at https://github.com/juliaaudio/portaudio.jl/issues"""))
         end
     end
 end
@@ -288,6 +289,7 @@ for (TypeName, Super) in ((:PortAudioSink, :SampleSink),
             # it back and forth to julia column-major
             chunkbuf = zeros(T, channels, CHUNKSIZE)
             ringbuf = RingBuffer{T}(channels, ringbufsize)
+            breakpoint()
             new(name, stream, chunkbuf, ringbuf, channels)
         end
     end
@@ -376,10 +378,11 @@ function set_global_callbacks()
 end
 
 function suppress_err(dofunc::Function)
-    nullfile = @static iswindows() ? "nul" : "/dev/null"
-    open(nullfile, "w") do io
-        redirect_stdout(dofunc, io)
-    end
+    # nullfile = @static iswindows() ? "nul" : "/dev/null"
+    # open(nullfile, "w") do io
+    #     redirect_stderr(dofunc, io)
+    # end
+    dofunc()
 end
 
 function __init__()
@@ -389,6 +392,11 @@ function __init__()
     suppress_err() do
         Pa_Initialize()
     end
+
+    atexit() do
+        Pa_Terminate()
+    end
 end
 
+breakpoint(obj=nothing) = ccall(:jl_breakpoint, Cvoid, (Any,), obj)
 end # module PortAudio
