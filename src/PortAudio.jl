@@ -80,6 +80,7 @@ mutable struct PortAudioStream{T}
     sink # untyped because of circular type definition
     source # untyped because of circular type definition
     errbuf::RingBuffer{pa_shim_errmsg_t} # used to send errors from the portaudio callback
+    errtask::Task
     bufinfo::pa_shim_info_t # data used in the portaudio callback
 
     # this inner constructor is generally called via the top-level outer
@@ -111,14 +112,16 @@ mutable struct PortAudioStream{T}
                 synced, notifycb_c,
                 inchans > 0 ? notifyhandle(this.source) : C_NULL,
                 outchans > 0 ? notifyhandle(this.sink) : C_NULL,
-                notifyhandle(this.errbuf))
+                notifyhandle(this.errbuf),
+                global_cond[].handle) # this is only needed for the libuv workaround
         this.stream = suppress_err() do
             Pa_OpenStream(inparams, outparams, float(sr), blocksize, paNoFlag,
                           shim_processcb_c, this.bufinfo)
         end
 
         Pa_StartStream(this.stream)
-        @async handle_errors(this)
+        this.errtask = @async handle_errors(this)
+        push!(active_streams, this)
 
         this
     end
@@ -207,6 +210,28 @@ function PortAudioStream(inchans=2, outchans=2; kwargs...)
     PortAudioStream(indevice, outdevice, inchans, outchans; kwargs...)
 end
 
+const pa_inited = Ref(false)
+const active_streams = Set{PortAudioStream}()
+
+function notify_active_streams()
+    # errors here can cause the system to hang if they're waiting on these
+    # conditions, so we do our own exception display for easier debugging
+    try
+        while true
+            wait(global_cond[])
+            pa_inited[] || break
+
+            for stream in active_streams
+                notify(stream.source.ringbuf.datanotify.cond)
+                notify(stream.sink.ringbuf.datanotify.cond)
+                notify(stream.errbuf.datanotify.cond)
+            end
+        end
+    catch ex
+        showerror(stderr, ex, backtrace())
+    end
+end
+
 function close(stream::PortAudioStream)
     if stream.stream != C_NULL
         Pa_StopStream(stream.stream)
@@ -215,6 +240,9 @@ function close(stream::PortAudioStream)
         close(stream.sink)
         close(stream.errbuf)
         stream.stream = C_NULL
+        # wait for the error task to clean up
+        fetch(stream.errtask)
+        delete!(active_streams, stream)
     end
 
     nothing
@@ -382,12 +410,31 @@ function suppress_err(dofunc::Function)
     end
 end
 
+# this ref has to be set during __init__ to register itself properly with libuv
+const global_cond = Ref{Base.AsyncCondition}()
 function __init__()
+    # currently libuv has issues when you try to notify more than one condition
+    # (see https://github.com/libuv/libuv/issues/1951). So as a workaround we use
+    # a global AsyncCondition that gets notified from the audio callback, and it
+    # handles notifying the individual RingBuffer AsyncConditions.
+    global_cond[] = Base.AsyncCondition()
     set_global_callbacks()
 
     # initialize PortAudio on module load
     suppress_err() do
         Pa_Initialize()
+    end
+    pa_inited[] = true
+    notifier = @async notify_active_streams()
+
+    atexit() do
+        for str in active_streams
+            close(str)
+        end
+        Pa_Terminate()
+        pa_inited[] = false
+        notify(global_cond[].cond)
+        fetch(notifier)
     end
 end
 

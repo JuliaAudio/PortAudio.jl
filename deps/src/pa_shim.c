@@ -26,17 +26,20 @@ typedef struct {
     void *inputhandle; // condition to notify on new input
     void *outputhandle; // condition to notify when ready for output
     void *errorhandle; // condition to notify on new error
+    void *globalhandle; // only needed for libuv workaround
 } pa_shim_info_t;
 
 void senderr(pa_shim_info_t *info, pa_shim_errmsg_t msg) {
-    if(PaUtil_GetRingBufferWriteAvailable(info->errorbuf) < 2) {
+    if(PaUtil_GetRingBufferWriteAvailable(info->errorbuf) == 1) {
         // we've overflowed our error buffer! notify the host.
         msg = PA_SHIM_ERRMSG_ERR_OVERFLOW;
     }
     PaUtil_WriteRingBuffer(info->errorbuf, &msg, 1);
-    if(info->notifycb) {
-        info->notifycb(info->errorhandle);
-    }
+    // for now we're relying on the global handle. uncomment the following
+    // when the libuv workaround is no longer necessary
+    // if(info->notifycb) {
+    //     info->notifycb(info->errorhandle);
+    // }
 }
 
 // return the sha256 hash of the shim source so we can make sure things are in sync
@@ -60,6 +63,7 @@ int pa_shim_processcb(const void *input, void *output,
     pa_shim_info_t *info = userData;
     if(info->notifycb == NULL) {
         fprintf(stderr, "pa_shim ERROR: notifycb is NULL\n");
+        return paAbort;
     }
     int nwrite;
     if(info->inputbuf) {
@@ -80,18 +84,18 @@ int pa_shim_processcb(const void *input, void *output,
     // read/write from the ringbuffers
     if(info->inputbuf) {
         PaUtil_WriteRingBuffer(info->inputbuf, input, nwrite);
-        if(info->notifycb) {
-            info->notifycb(info->inputhandle);
-        }
+        // for now we're relying on the global handle. uncomment the following
+        // when the libuv workaround is no longer necessary
+        // info->notifycb(info->inputhandle);
         if(nwrite < frameCount) {
             senderr(info, PA_SHIM_ERRMSG_OVERFLOW);
         }
     }
     if(info->outputbuf) {
         PaUtil_ReadRingBuffer(info->outputbuf, output, nread);
-        if(info->notifycb) {
-            info->notifycb(info->outputhandle);
-        }
+        // for now we're relying on the global handle. uncomment the following
+        // when the libuv workaround is no longer necessary
+        // info->notifycb(info->outputhandle);
         if(nread < frameCount) {
             senderr(info, PA_SHIM_ERRMSG_UNDERFLOW);
             // we didn't fill the whole output buffer, so zero it out
@@ -100,5 +104,6 @@ int pa_shim_processcb(const void *input, void *output,
         }
     }
 
+    info->notifycb(info->globalhandle);
     return paContinue;
 }

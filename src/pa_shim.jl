@@ -42,4 +42,5 @@ mutable struct pa_shim_info_t
     inputhandle::Ptr{Cvoid} # condition to notify on new input data
     outputhandle::Ptr{Cvoid} # condition to notify when ready for output
     errorhandle::Ptr{Cvoid} # condition to notify on new errors
+    globalhandle::Ptr{Cvoid} # only needed for libuv workaround
 end
