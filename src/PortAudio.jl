@@ -211,6 +211,9 @@ function PortAudioStream(inchans=2, outchans=2; kwargs...)
 end
 
 # handle do-syntax
+# TODO: there seems to be a buffering issue here. Running this multiple
+# times creates weird echos, and even the first time there might be something
+# fishy going on. Needs investigation
 function PortAudioStream(fn::Function, args...; kwargs...)
     str = PortAudioStream(args...; kwargs...)
     try
