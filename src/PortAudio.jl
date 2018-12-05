@@ -210,6 +210,16 @@ function PortAudioStream(inchans=2, outchans=2; kwargs...)
     PortAudioStream(indevice, outdevice, inchans, outchans; kwargs...)
 end
 
+# handle do-syntax
+function PortAudioStream(fn::Function, args...; kwargs...)
+    str = PortAudioStream(args...; kwargs...)
+    try
+        fn(str)
+    finally
+        close(str)
+    end
+end
+
 const pa_inited = Ref(false)
 const active_streams = Set{PortAudioStream}()
 
