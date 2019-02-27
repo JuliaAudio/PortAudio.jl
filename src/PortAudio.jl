@@ -296,7 +296,7 @@ function handle_errors(stream::PortAudioStream)
         nread = read!(stream.errbuf, err)
         nread == 1 || break
         if err[1] == PA_SHIM_ERRMSG_ERR_OVERFLOW
-            warn("Error buffer overflowed on stream $(stream.name)")
+            warn("Error buffer overflowed on portaudio stream")
         elseif err[1] == PA_SHIM_ERRMSG_OVERFLOW
             # warn("Input overflowed from $(name(stream.source))")
         elseif err[1] == PA_SHIM_ERRMSG_UNDERFLOW
@@ -304,7 +304,7 @@ function handle_errors(stream::PortAudioStream)
         else
             error("""
                 Got unrecognized error code $(err[1]) from audio thread for
-                stream "$(stream.name)". Please file an issue at
+                portaudio stream. Please file an issue at
                 https://github.com/juliaaudio/portaudio.jl/issues""")
         end
     end
