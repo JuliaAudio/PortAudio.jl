@@ -296,11 +296,11 @@ function handle_errors(stream::PortAudioStream)
         nread = read!(stream.errbuf, err)
         nread == 1 || break
         if err[1] == PA_SHIM_ERRMSG_ERR_OVERFLOW
-            warn("Error buffer overflowed on portaudio stream")
+            @warn "Error buffer overflowed on portaudio stream"
         elseif err[1] == PA_SHIM_ERRMSG_OVERFLOW
-            # warn("Input overflowed from $(name(stream.source))")
+            @warn "Input overflowed from $(name(stream.source))"
         elseif err[1] == PA_SHIM_ERRMSG_UNDERFLOW
-            # warn("Output underflowed to $(name(stream.sink))")
+            @warn "Output underflowed to $(name(stream.sink))"
         else
             error("""
                 Got unrecognized error code $(err[1]) from audio thread for
