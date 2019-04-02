@@ -77,6 +77,7 @@ mutable struct PortAudioStream{T}
     samplerate::Float64
     blocksize::Int
     stream::PaStream
+    warn_xruns::Bool
     sink # untyped because of circular type definition
     source # untyped because of circular type definition
     errbuf::RingBuffer{pa_shim_errmsg_t} # used to send errors from the portaudio callback
@@ -86,7 +87,8 @@ mutable struct PortAudioStream{T}
     # this inner constructor is generally called via the top-level outer
     # constructor below
     function PortAudioStream{T}(indev::PortAudioDevice, outdev::PortAudioDevice,
-                                inchans, outchans, sr, blocksize, synced) where {T}
+                                inchans, outchans, sr, blocksize, synced,
+                                warn_xruns) where {T}
         inchans = inchans == -1 ? indev.maxinchans : inchans
         outchans = outchans == -1 ? outdev.maxoutchans : outchans
         inparams = (inchans == 0) ?
@@ -95,7 +97,7 @@ mutable struct PortAudioStream{T}
         outparams = (outchans == 0) ?
             Ptr{Pa_StreamParameters}(0) :
             Ref(Pa_StreamParameters(outdev.idx, outchans, type_to_fmt[T], 0.0, C_NULL))
-        this = new(sr, blocksize, C_NULL)
+        this = new(sr, blocksize, C_NULL, warn_xruns)
         @compat finalizer(close, this)
         this.sink = PortAudioSink{T}(outdev.name, this, outchans, blocksize*2)
         this.source = PortAudioSource{T}(indev.name, this, inchans, blocksize*2)
@@ -150,9 +152,14 @@ Options:
                   frames, and the round-trip latency is guaranteed constant. If
                   `false`, you are free to read and write separately, but
                   overflow or underflow can affect the round-trip latency.
+* `warn_xruns`:   Display a warning if there is a stream overrun or underrun,
+                  which often happens when Julia is compiling, or with a
+                  particularly large GC run. This can be quite verbose so is
+                  false by default.
 """
 function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
-        inchans=2, outchans=2; eltype=Float32, samplerate=-1, blocksize=DEFAULT_BLOCKSIZE, synced=false)
+        inchans=2, outchans=2; eltype=Float32, samplerate=-1, blocksize=DEFAULT_BLOCKSIZE,
+        synced=false, warn_xruns=false)
     if samplerate == -1
         sampleratein = indev.defaultsamplerate
         samplerateout = outdev.defaultsamplerate
@@ -167,7 +174,7 @@ function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
             samplerate = samplerateout
         end
     end
-    PortAudioStream{eltype}(indev, outdev, inchans, outchans, samplerate, blocksize, synced)
+    PortAudioStream{eltype}(indev, outdev, inchans, outchans, samplerate, blocksize, synced, warn_xruns)
 end
 
 # handle device names given as streams
@@ -298,9 +305,9 @@ function handle_errors(stream::PortAudioStream)
         if err[1] == PA_SHIM_ERRMSG_ERR_OVERFLOW
             @warn "Error buffer overflowed on portaudio stream"
         elseif err[1] == PA_SHIM_ERRMSG_OVERFLOW
-            @warn "Input overflowed from $(name(stream.source))"
+            stream.warn_xruns && @warn "Input overflowed from $(name(stream.source))"
         elseif err[1] == PA_SHIM_ERRMSG_UNDERFLOW
-            @warn "Output underflowed to $(name(stream.sink))"
+            stream.warn_xruns && @warn "Output underflowed to $(name(stream.sink))"
         else
             error("""
                 Got unrecognized error code $(err[1]) from audio thread for
