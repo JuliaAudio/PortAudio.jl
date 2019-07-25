@@ -9,7 +9,7 @@ function micmeter(metersize)
     println("Press Ctrl-C to quit")
     while true
         block = read(mic, 512)
-        blockmax = maximum(abs(block)) # find the maximum value in the block
+        blockmax = maximum(abs.(block)) # find the maximum value in the block
         signalmax = max(signalmax, blockmax) # keep the maximum value ever
         print("\r") # reset the cursor to the beginning of the line
         printmeter(metersize, blockmax, signalmax)
@@ -25,11 +25,11 @@ function printmeter(metersize, signal, peak)
     blankchars = max(0, peakpos-meterchars-1)
 
     for position in 1:meterchars
-        print_with_color(barcolor(metersize, position), ">")
+        printstyled(">", color=barcolor(metersize, position))
     end
 
     print(" " ^ blankchars)
-    print_with_color(barcolor(metersize, peakpos), "|")
+    printstyled("|", color=barcolor(metersize, peakpos))
     print(" " ^ (metersize - peakpos))
 end
 
