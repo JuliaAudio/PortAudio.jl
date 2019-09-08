@@ -2,15 +2,15 @@ function find_pa_shim()
     libdir = joinpath(@__DIR__, "..", "deps", "usr", "lib")
     libsuffix = ""
     basename = "pa_shim"
-    @static if Compat.Sys.islinux() && Sys.ARCH == :x86_64
+    @static if Sys.islinux() && Sys.ARCH == :x86_64
         libsuffix = "x86_64-linux-gnu"
-    elseif Compat.Sys.islinux() && Sys.ARCH == :i686
+    elseif Sys.islinux() && Sys.ARCH == :i686
         libsuffix = "i686-linux-gnu"
-    elseif Compat.Sys.isapple() && Sys.ARCH == :x86_64
+    elseif Sys.isapple() && Sys.ARCH == :x86_64
         libsuffix = "x86_64-apple-darwin14"
-    elseif Compat.Sys.iswindows() && Sys.ARCH == :x86_64
+    elseif Sys.iswindows() && Sys.ARCH == :x86_64
         libsuffix = "x86_64-w64-mingw32"
-    elseif Compat.Sys.iswindows() && Sys.ARCH == :i686
+    elseif Sys.iswindows() && Sys.ARCH == :i686
         libsuffix = "i686-w64-mingw32"
     elseif !any(
             (sfx) -> isfile(joinpath(libdir, "$basename.$sfx")),

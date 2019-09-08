@@ -4,15 +4,20 @@ module PortAudio
 
 using SampledSignals
 using RingBuffers
+#=
 using Compat
 using Compat: undef, fetch, @compat
 using Compat.LinearAlgebra: transpose!
 using Compat: stdout
 using Compat.Sys: iswindows
+=#
 
 import Base: eltype, show
 import Base: close, isopen
 import Base: read, read!, write, flush
+
+import LinearAlgebra
+import LinearAlgebra: transpose!
 
 export PortAudioStream
 
@@ -98,7 +103,7 @@ mutable struct PortAudioStream{T}
             Ptr{Pa_StreamParameters}(0) :
             Ref(Pa_StreamParameters(outdev.idx, outchans, type_to_fmt[T], 0.0, C_NULL))
         this = new(sr, blocksize, C_NULL, warn_xruns)
-        @compat finalizer(close, this)
+        finalizer(close, this)
         this.sink = PortAudioSink{T}(outdev.name, this, outchans, blocksize*2)
         this.source = PortAudioSource{T}(indev.name, this, inchans, blocksize*2)
         this.errbuf = RingBuffer{pa_shim_errmsg_t}(1, ERR_BUFSIZE)
@@ -424,7 +429,7 @@ function set_global_callbacks()
 end
 
 function suppress_err(dofunc::Function)
-    nullfile = @static iswindows() ? "nul" : "/dev/null"
+    nullfile = @static Sys.iswindows() ? "nul" : "/dev/null"
     open(nullfile, "w") do io
         redirect_stdout(dofunc, io)
     end

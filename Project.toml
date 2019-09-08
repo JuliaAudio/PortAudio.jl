@@ -1,0 +1,12 @@
+name = "PortAudio"
+uuid = "80ea8bcb-4634-5cb3-8ee8-a132660d1d2d"
+repo = "https://github.com/JuliaAudio/PortAudio.jl.git"
+version = "1.1.0"
+
+[deps]
+BinaryProvider = "b99e7846-7c00-51b0-8f62-c81ae34c0232"
+Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+RingBuffers = "f6d8bcc6-4e01-5431-93c4-9d6004abab90"
+SampledSignals = "bd7594eb-a658-542f-9e75-4c4d8908c167"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

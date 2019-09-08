@@ -1,11 +1,9 @@
 #!/usr/bin/env julia
 
-using Compat
-using Compat.Test
-import Compat: Cvoid
 using PortAudio
 using SampledSignals
 using RingBuffers
+using Test
 
 # pull in some extra stuff we need to test the callback directly
 using PortAudio: notifyhandle, notifycb_c, shim_processcb_c
@@ -204,7 +202,7 @@ end
     end
 
     @testset "using correct shim version" begin
-        @test_broken PortAudio.shimhash() == "87021557a9f999545828eb11e4ebad2cd278b734dd91a8bd3faf05c89912cf80"
+        @test PortAudio.shimhash() == "87021557a9f999545828eb11e4ebad2cd278b734dd91a8bd3faf05c89912cf80"
     end
 
     @testset "Basic callback functionality" begin

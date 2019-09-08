@@ -5,13 +5,13 @@
 include("runtests.jl")
 
 # these default values are specific to my machines
-if Compat.Sys.iswindows()
+if Sys.iswindows()
     default_indev = "Microphone Array (Realtek High "
     default_outdev = "Speaker/Headphone (Realtek High"
-elseif Compat.Sys.isapple()
+elseif Sys.isapple()
     default_indev = "Built-in Microphone"
     default_outdev = "Built-in Output"
-elseif Compat.Sys.islinux()
+elseif Sys.islinux()
     default_indev = "default"
     default_outdev = "default"
 end
@@ -50,7 +50,7 @@ end
         write(stream, buf)
         io = IOBuffer()
         show(io, stream)
-        @test Compat.occursin("""
+        @test occursin("""
         PortAudioStream{Float32}
           Samplerate: 44100.0Hz
           Buffer Size: 4096 frames
