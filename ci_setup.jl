@@ -11,11 +11,11 @@ else
     using Pkg
     # for now we need to `clone` because there's no way to specify the
     # package name for `add`
-    Pkg.clone(pwd(), "PortAudio")
+    #Pkg.clone(pwd(), "PortAudio")
     Pkg.build("PortAudio")
     Pkg.add(PackageSpec(name="SampledSignals", rev="master"))
     Pkg.add(PackageSpec(name="RingBuffers", rev="master"))
 end
 
 # add test deps manually because we'll be running test/runtests.jl manually
-Pkg.add("Compat")
+#Pkg.add("Compat")
