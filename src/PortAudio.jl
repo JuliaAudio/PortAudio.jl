@@ -1,9 +1,6 @@
-__precompile__(true)
-
 module PortAudio
 
-using SampledSignals
-using RingBuffers
+using libportaudio_jll, Libdl, SampledSignals, RingBuffers
 #=
 using Compat
 using Compat: undef, fetch, @compat
@@ -23,7 +20,6 @@ export PortAudioStream
 
 
 # Get binary dependencies loaded from BinDeps
-include("../deps/deps.jl")
 include("pa_shim.jl")
 include("libportaudio.jl")
 
@@ -396,8 +392,6 @@ function SampledSignals.unsafe_read!(source::PortAudioSource, buf::Array, frameo
     nread
 end
 
-
-const libpa_shim = find_pa_shim()
 
 """
     PortAudio.shimhash()

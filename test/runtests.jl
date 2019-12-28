@@ -202,7 +202,7 @@ end
     end
 
     @testset "using correct shim version" begin
-        @test PortAudio.shimhash() == "87021557a9f999545828eb11e4ebad2cd278b734dd91a8bd3faf05c89912cf80"
+        @test PortAudio.shimhash() == "7570f145b3c1b5a6f0733378a45807c5fd47e30f04771e4eaa2c380d80dcd15d"
     end
 
     @testset "Basic callback functionality" begin
