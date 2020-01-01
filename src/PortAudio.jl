@@ -1,13 +1,6 @@
 module PortAudio
 
 using libportaudio_jll, Libdl, SampledSignals, RingBuffers
-#=
-using Compat
-using Compat: undef, fetch, @compat
-using Compat.LinearAlgebra: transpose!
-using Compat: stdout
-using Compat.Sys: iswindows
-=#
 
 import Base: eltype, show
 import Base: close, isopen
