@@ -43,6 +43,28 @@ const paContinue = PaStreamCallbackResult(0)
 const paComplete = PaStreamCallbackResult(1)
 const paAbort = PaStreamCallbackResult(2)
 
+"""
+Call the given expression in a separate thread, waiting on the result. This is
+useful when running code that would otherwise block the Julia process (like a
+`ccall` into a function that does IO).
+
+This will wait for the threaded call to complete even if an exception is thrown.
+"""
+macro tcall(ex)
+    quote
+        t = Base.Threads.@spawn $(esc(ex))
+        try
+            fetch(t)
+        catch
+            # even if we got an exception (like an interrupt exception) make sure
+            # we wait for the spawned call to complete so we don't clean up
+            # any of its resources
+            wait(t)
+            rethrow()
+        end
+    end
+end
+
 function Pa_Initialize()
     err = ccall((:Pa_Initialize, libportaudio), PaError, ())
     handle_status(err)
@@ -170,8 +192,9 @@ function Pa_OpenStream(inParams, outParams,
                 # matter because userdata should be GC-rooted anyways
                 Ptr{Cvoid}),
                 streamPtr, inParams, outParams,
-                sampleRate, framesPerBuffer, flags, callback,
-                pointer_from_objref(userdata))
+                float(sampleRate), framesPerBuffer, flags,
+                callback === nothing ? C_NULL : callback,
+                userdata === nothing ? C_NULL : pointer_from_objref(userdata))
     handle_status(err)
     streamPtr[]
 end
@@ -211,9 +234,9 @@ end
 function Pa_ReadStream(stream::PaStream, buf::Array, frames::Integer=length(buf),
                        show_warnings::Bool=true)
     frames <= length(buf) || error("Need a buffer at least $frames long")
-    err = ccall((:Pa_ReadStream, libportaudio), PaError,
-                (PaStream, Ref{Cvoid}, Culong),
-                stream, buf, frames)
+    err = @tcall ccall((:Pa_ReadStream, libportaudio), PaError,
+                           (PaStream, Ptr{Cvoid}, Culong),
+                           stream, buf, frames)
     handle_status(err, show_warnings)
     buf
 end
@@ -221,9 +244,9 @@ end
 function Pa_WriteStream(stream::PaStream, buf::Array, frames::Integer=length(buf),
                         show_warnings::Bool=true)
     frames <= length(buf) || error("Need a buffer at least $frames long")
-    err = ccall((:Pa_WriteStream, libportaudio), PaError,
-                (PaStream, Ref{Cvoid}, Culong),
-                stream, buf, frames)
+    err = @tcall ccall((:Pa_WriteStream, libportaudio), PaError,
+                           (PaStream, Ptr{Cvoid}, Culong),
+                           stream, buf, frames)
     handle_status(err, show_warnings)
     nothing
 end
@@ -241,11 +264,11 @@ function handle_status(err::PaError, show_warnings::Bool=true)
         if show_warnings
             msg = ccall((:Pa_GetErrorText, libportaudio),
                         Ptr{Cchar}, (PaError,), err)
-            warn("libportaudio: " * unsafe_string(msg))
+            @warn("libportaudio: " * unsafe_string(msg))
         end
     elseif err != PA_NO_ERROR
         msg = ccall((:Pa_GetErrorText, libportaudio),
                     Ptr{Cchar}, (PaError,), err)
-        error("libportaudio: " * unsafe_string(msg))
+        throw(ErrorException("libportaudio: " * unsafe_string(msg)))
     end
 end
