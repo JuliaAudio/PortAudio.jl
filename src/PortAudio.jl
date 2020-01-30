@@ -341,10 +341,13 @@ function __init__()
         confdir = searchdirs[confdir_idx]
         ENV[envkey] = confdir
     end
-    # initialize PortAudio on module load
-    # suppress_err() do
+    # initialize PortAudio on module load. libportaudio prints a bunch of
+    # junk to STDOUT on initialization, so we swallow it.
+    # TODO: actually check the junk to make sure there's nothing in there we
+    # don't expect
+    suppress_err() do
         Pa_Initialize()
-    # end
+    end
 
     atexit() do
         Pa_Terminate()
