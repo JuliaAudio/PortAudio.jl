@@ -67,6 +67,15 @@ mutable struct PortAudioStream{T}
 
     # this inner constructor is generally called via the top-level outer
     # constructor below
+
+    # TODO: handle blocksize=0, that should be the default and generally works
+    # much better than trying to specify
+    # TODO: expose latency parameter
+    # TODO: pre-fill outbut buffer on init
+    # TODO: recover from xruns - currently with low latencies (e.g. 0.01) it
+    # will run fine for a while and then fail with the first xrun.
+    # TODO: figure out whether we can get deterministic latency...
+    # TODO: write a latency tester app
     function PortAudioStream{T}(indev::PortAudioDevice, outdev::PortAudioDevice,
                                 inchans, outchans, sr, blocksize,
                                 warn_xruns) where {T}
@@ -74,10 +83,10 @@ mutable struct PortAudioStream{T}
         outchans = outchans == -1 ? outdev.maxoutchans : outchans
         inparams = (inchans == 0) ?
             Ptr{Pa_StreamParameters}(0) :
-            Ref(Pa_StreamParameters(indev.idx, inchans, type_to_fmt[T], 0.0, C_NULL))
+            Ref(Pa_StreamParameters(indev.idx, inchans, type_to_fmt[T], 0.1, C_NULL))
         outparams = (outchans == 0) ?
             Ptr{Pa_StreamParameters}(0) :
-            Ref(Pa_StreamParameters(outdev.idx, outchans, type_to_fmt[T], 0.0, C_NULL))
+            Ref(Pa_StreamParameters(outdev.idx, outchans, type_to_fmt[T], 0.1, C_NULL))
         this = new(sr, blocksize, C_NULL, warn_xruns)
         # finalizer(close, this)
         this.sink = PortAudioSink{T}(outdev.name, this, outchans)
@@ -199,6 +208,7 @@ end
 isopen(stream::PortAudioStream) = stream.stream != C_NULL
 
 SampledSignals.samplerate(stream::PortAudioStream) = stream.samplerate
+SampledSignals.blocksize(stream::PortAudioStream) = stream.blocksize
 eltype(stream::PortAudioStream{T}) where T = T
 
 read(stream::PortAudioStream, args...) = read(stream.source, args...)
