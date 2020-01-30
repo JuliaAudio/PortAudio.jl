@@ -315,31 +315,33 @@ function suppress_err(dofunc::Function)
 end
 
 function __init__()
-    envkey = "ALSA_CONFIG_DIR"
-    if envkey ∉ keys(ENV)
-        searchdirs = ["/usr/share/alsa",
-                      "/usr/local/share/alsa",
-                      "/etc/alsa"]
-        confdir_idx = findfirst(searchdirs) do d
-            isfile(joinpath(d, "alsa.conf"))
-        end
-        if confdir_idx === nothing
-            throw(ErrorException(
-                """
-                Could not find ALSA config directory. Searched:
-                $(join(searchdirs, "\n"))
+    if Sys.islinux()
+        envkey = "ALSA_CONFIG_DIR"
+        if envkey ∉ keys(ENV)
+            searchdirs = ["/usr/share/alsa",
+                          "/usr/local/share/alsa",
+                          "/etc/alsa"]
+            confdir_idx = findfirst(searchdirs) do d
+                isfile(joinpath(d, "alsa.conf"))
+            end
+            if confdir_idx === nothing
+                throw(ErrorException(
+                    """
+                    Could not find ALSA config directory. Searched:
+                    $(join(searchdirs, "\n"))
 
-                if ALSA is installed, set the "ALSA_CONFIG_DIR" environment
-                variable. The given directory should have a file "alsa.conf".
+                    if ALSA is installed, set the "ALSA_CONFIG_DIR" environment
+                    variable. The given directory should have a file "alsa.conf".
 
-                If it would be useful to others, please file an issue at
-                https://github.com/JuliaAudio/PortAudio.jl/issues
-                with your alsa config directory so we can add it to the search
-                paths.
-                """))
+                    If it would be useful to others, please file an issue at
+                    https://github.com/JuliaAudio/PortAudio.jl/issues
+                    with your alsa config directory so we can add it to the search
+                    paths.
+                    """))
+            end
+            confdir = searchdirs[confdir_idx]
+            ENV[envkey] = confdir
         end
-        confdir = searchdirs[confdir_idx]
-        ENV[envkey] = confdir
     end
     # initialize PortAudio on module load. libportaudio prints a bunch of
     # junk to STDOUT on initialization, so we swallow it.
