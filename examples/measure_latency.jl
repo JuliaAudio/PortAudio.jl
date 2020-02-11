@@ -2,9 +2,9 @@ using PortAudio
 using DSP
 
 function create_measure_signal()
-    signal = zeros(Float32, 1000)
+    signal = zeros(Float32, 20000)
     for i in 1:3
-        signal = vcat(signal, rand(Float32, 100), zeros(Float32, i*3000))
+        signal = vcat(signal, rand(Float32, 100), zeros(Float32, i*10000))
     end
     return signal
 end
@@ -57,8 +57,9 @@ end
 
 measure_latency(0.1, 0.1, 32; is_warmup = true) # warmup
 
-for in_latency in [0.1, 0.01, 0.005]
-    for out_latency in [0.1, 0.01, 0.005]
+latencies = [0.1, 0.01, 0.005]
+for in_latency in latencies
+    for out_latency in latencies
         for blocksize in [32]
             measure = measure_latency(in_latency, out_latency, blocksize)
             println("$measure ms latency for in_latency=$in_latency, out_latency=$out_latency, blocksize=$blocksize")
