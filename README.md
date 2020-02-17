@@ -4,7 +4,6 @@ PortAudio.jl
 [![Build Status](https://travis-ci.org/JuliaAudio/PortAudio.jl.svg?branch=master)](https://travis-ci.org/JuliaAudio/PortAudio.jl)
 [![Build status](https://ci.appveyor.com/api/projects/status/6x1ha7uvrnel060g/branch/master?svg=true)](https://ci.appveyor.com/project/ssfrr/portaudio-jl/branch/master)
 
-
 PortAudio.jl is a wrapper for [libportaudio](http://www.portaudio.com/), which gives cross-platform access to audio devices. It is compatible with the types defined in [SampledSignals.jl](https://github.com/JuliaAudio/SampledSignals.jl). It provides a `PortAudioStream` type, which can be read from and written to.
 
 ## Opening a stream
@@ -52,13 +51,26 @@ PortAudio.jl also provides convenience wrappers around the `PortAudioStream` typ
 
 ```julia
 stream = PortAudioStream(2, 2)
-write(stream, stream)
+try
+    # cancel with Ctrl-C
+    write(stream, stream)
+finally
+    close(stream)
+end
+```
+
+### Use `do` syntax to auto-close the stream
+```julia
+PortAudioStream(2, 2) do stream
+    write(stream, stream)
+end
 ```
 
 ### Open your built-in microphone and speaker by name
 ```julia
-stream = PortAudioStream("Built-in Microph", "Built-in Output")
-write(stream, stream)
+PortAudioStream("Built-in Microph", "Built-in Output") do stream
+    write(stream, stream)
+end
 ```
 
 ### Record 10 seconds of audio and save to an ogg file
@@ -77,6 +89,8 @@ julia> buf = read(stream, 10s)
 10.0 s at 48000 s⁻¹
 ▁▄▂▃▅▃▂▄▃▂▂▁▁▂▂▁▁▄▃▁▁▄▂▁▁▁▄▃▁▁▃▃▁▁▁▁▁▁▁▁▄▄▄▄▄▂▂▂▁▃▃▁▃▄▂▁▁▁▁▃▃▂▁▁▁▁▁▁▃▃▂▂▁▃▃▃▁▁▁▁
 ▁▄▂▃▅▃▂▄▃▂▂▁▁▂▂▁▁▄▃▁▁▄▂▁▁▁▄▃▁▁▃▃▁▁▁▁▁▁▁▁▄▄▄▄▄▂▂▂▁▃▃▁▃▄▂▁▁▁▁▃▃▂▁▁▁▁▁▁▃▃▂▂▁▃▃▃▁▁▁▁
+
+julia> close(stream)
 
 julia> save(joinpath(homedir(), "Desktop", "myvoice.ogg"), buf)
 ```

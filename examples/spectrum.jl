@@ -3,7 +3,7 @@
 
 module SpectrumExample
 
-using GR, PortAudio, SampledSignals
+using GR, PortAudio, SampledSignals, FFTW
 
 const N = 1024
 const stream = PortAudioStream(1, 0, blocksize=N)

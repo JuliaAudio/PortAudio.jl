@@ -25,11 +25,11 @@ function printmeter(metersize, signal, peak)
     blankchars = max(0, peakpos-meterchars-1)
 
     for position in 1:meterchars
-        print_with_color(barcolor(metersize, position), ">")
+        printstyled(">", color=barcolor(metersize, position))
     end
 
     print(" " ^ blankchars)
-    print_with_color(barcolor(metersize, peakpos), "|")
+    printstyled("|", color=barcolor(metersize, peakpos))
     print(" " ^ (metersize - peakpos))
 end
 

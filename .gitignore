@@ -1,6 +1,7 @@
 *.swp
 *.o
 deps/deps.jl
+deps/build.log
 *.wav
 *.flac
 *.cov

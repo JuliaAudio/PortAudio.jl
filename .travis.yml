@@ -3,11 +3,14 @@ language: julia
 os:
   - linux
   - osx
-sudo: required
 julia:
-  - 0.6
+  - 1
+  - nightly
+matrix:
+  allow_failures:
+    - julia: nightly
+  fast_finish: true
 notifications:
-  email: false
-script:
- - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
- - julia -e 'Pkg.clone(pwd()); Pkg.build("PortAudio"); Pkg.test("PortAudio")'
+  email: true
+after_success:
+  - julia -e 'using Pkg; Pkg.add("Coverage"); using Coverage; Codecov.submit(process_folder())'
