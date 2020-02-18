@@ -13,10 +13,7 @@ export PortAudioStream
 
 include("libportaudio.jl")
 
-# These sizes are all in frames
-
-# the block size is what we request from portaudio if no blocksize is given.
-const DEFAULT_BLOCKSIZE=4096
+# This size is in frames
 
 # data is passed to and from portaudio in chunks with this many frames, because
 # we need to interleave the samples
@@ -34,6 +31,10 @@ mutable struct PortAudioDevice
     maxoutchans::Int
     defaultsamplerate::Float64
     idx::PaDeviceIndex
+    lowinputlatency::Float64
+    lowoutputlatency::Float64
+    highinputlatency::Float64
+    highoutputlatency::Float64
 end
 
 PortAudioDevice(info::PaDeviceInfo, idx) = PortAudioDevice(
@@ -42,7 +43,11 @@ PortAudioDevice(info::PaDeviceInfo, idx) = PortAudioDevice(
         info.max_input_channels,
         info.max_output_channels,
         info.default_sample_rate,
-        idx)
+        idx,
+        info.default_low_input_latency,
+        info.default_low_output_latency,
+        info.default_high_input_latency,
+        info.default_high_output_latency)
 
 function devices()
     ndevices = Pa_GetDeviceCount()
@@ -59,7 +64,7 @@ devnames() = join(["\"$(dev.name)\"" for dev in devices()], "\n")
 
 mutable struct PortAudioStream{T}
     samplerate::Float64
-    blocksize::Int
+    latency::Float64
     stream::PaStream
     warn_xruns::Bool
     sink # untyped because of circular type definition
@@ -68,17 +73,13 @@ mutable struct PortAudioStream{T}
     # this inner constructor is generally called via the top-level outer
     # constructor below
 
-    # TODO: handle blocksize=0, that should be the default and generally works
-    # much better than trying to specify
-    # TODO: expose latency parameter
     # TODO: pre-fill outbut buffer on init
     # TODO: recover from xruns - currently with low latencies (e.g. 0.01) it
     # will run fine for a while and then fail with the first xrun.
     # TODO: figure out whether we can get deterministic latency...
-    # TODO: write a latency tester app
     function PortAudioStream{T}(indev::PortAudioDevice, outdev::PortAudioDevice,
-                                inchans, outchans, sr, blocksize,
-                                warn_xruns, latency) where {T}
+                                inchans, outchans, sr,
+                                latency, warn_xruns) where {T}
         inchans = inchans == -1 ? indev.maxinchans : inchans
         outchans = outchans == -1 ? outdev.maxoutchans : outchans
         inparams = (inchans == 0) ?
@@ -87,12 +88,12 @@ mutable struct PortAudioStream{T}
         outparams = (outchans == 0) ?
             Ptr{Pa_StreamParameters}(0) :
             Ref(Pa_StreamParameters(outdev.idx, outchans, type_to_fmt[T], latency, C_NULL))
-        this = new(sr, blocksize, C_NULL, warn_xruns)
+        this = new(sr, latency, C_NULL, warn_xruns)
         # finalizer(close, this)
         this.sink = PortAudioSink{T}(outdev.name, this, outchans)
         this.source = PortAudioSource{T}(indev.name, this, inchans)
         this.stream = suppress_err() do
-            Pa_OpenStream(inparams, outparams, sr, blocksize, paNoFlag,
+            Pa_OpenStream(inparams, outparams, sr, 0, paNoFlag,
                           nothing, nothing)
         end
 
@@ -100,6 +101,10 @@ mutable struct PortAudioStream{T}
 
         this
     end
+end
+
+function defaultlatency(devices...)
+    return maximum(d -> d.highoutputlatency, devices) #TODO(jakubwro): add in/out and high/low logic
 end
 
 # this is the top-level outer constructor that all the other outer constructors end up calling
@@ -118,16 +123,16 @@ Options:
 
 * `eltype`:       Sample type of the audio stream (defaults to Float32)
 * `samplerate`:   Sample rate (defaults to device sample rate)
-* `blocksize`:    Size of the blocks that are written to and read from the audio
-                  device. (Defaults to $DEFAULT_BLOCKSIZE)
+* `latency`:      Requested latency. Stream could underrun when too low,
+                  consider using provided device defaults
 * `warn_xruns`:   Display a warning if there is a stream overrun or underrun,
                   which often happens when Julia is compiling, or with a
                   particularly large GC run. This can be quite verbose so is
                   false by default.
 """
 function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
-        inchans=2, outchans=2; eltype=Float32, samplerate=-1, blocksize=DEFAULT_BLOCKSIZE,
-        warn_xruns=false, latency=0.1)
+        inchans=2, outchans=2; eltype=Float32, samplerate=-1,
+        latency=defaultlatency(indev, outdev), warn_xruns=false)
     if samplerate == -1
         sampleratein = indev.defaultsamplerate
         samplerateout = outdev.defaultsamplerate
@@ -142,7 +147,7 @@ function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
             samplerate = samplerateout
         end
     end
-    PortAudioStream{eltype}(indev, outdev, inchans, outchans, samplerate, blocksize, warn_xruns, latency)
+    PortAudioStream{eltype}(indev, outdev, inchans, outchans, samplerate, latency, warn_xruns)
 end
 
 # handle device names given as streams
@@ -208,7 +213,7 @@ end
 isopen(stream::PortAudioStream) = stream.stream != C_NULL
 
 SampledSignals.samplerate(stream::PortAudioStream) = stream.samplerate
-SampledSignals.blocksize(stream::PortAudioStream) = stream.blocksize
+SampledSignals.blocksize(stream::PortAudioStream) = trunc(Int, stream.samplerate * stream.latency)
 eltype(stream::PortAudioStream{T}) where T = T
 
 read(stream::PortAudioStream, args...) = read(stream.source, args...)
@@ -220,7 +225,7 @@ flush(stream::PortAudioStream) = flush(stream.sink)
 function show(io::IO, stream::PortAudioStream)
     println(io, typeof(stream))
     println(io, "  Samplerate: ", samplerate(stream), "Hz")
-    print(io, "  Buffer Size: ", stream.blocksize, " frames")
+    print(io, "  Buffer Size: ", blocksize(stream), " frames")
     if nchannels(stream.sink) > 0
         print(io, "\n  ", nchannels(stream.sink), " channel sink: \"", name(stream.sink), "\"")
     end
@@ -253,7 +258,7 @@ end
 
 SampledSignals.nchannels(s::Union{PortAudioSink, PortAudioSource}) = s.nchannels
 SampledSignals.samplerate(s::Union{PortAudioSink, PortAudioSource}) = samplerate(s.stream)
-SampledSignals.blocksize(s::Union{PortAudioSink, PortAudioSource}) = s.stream.blocksize
+SampledSignals.blocksize(s::Union{PortAudioSink, PortAudioSource}) = blocksize(s.stream)
 eltype(::Union{PortAudioSink{T}, PortAudioSource{T}}) where {T} = T
 function close(s::Union{PortAudioSink, PortAudioSource})
     throw(ErrorException("Attempted to close PortAudioSink or PortAudioSource.
