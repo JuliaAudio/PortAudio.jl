@@ -3,7 +3,7 @@ using PortAudio
 """Continuously read from the default audio input and plot an
 ASCII level/peak meter"""
 function micmeter(metersize)
-    mic = PortAudioStream(1, 0; latency=512)
+    mic = PortAudioStream(1, 0; latency=0.1)
 
     signalmax = zero(eltype(mic))
     println("Press Ctrl-C to quit")

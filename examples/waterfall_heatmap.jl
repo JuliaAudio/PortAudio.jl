@@ -34,7 +34,7 @@ N = 1024 # size of audio read
 N2 = N÷2+1 # size of rfft output
 D = 200 # number of bins to display
 M = 200 # amount of history to keep
-src = PortAudioStream(1, 2, blocksize=N)
+src = PortAudioStream(1, 2)
 buf = Array{Float32}(N) # buffer for reading
 fftplan = plan_rfft(buf; flags=FFTW.EXHAUSTIVE)
 fftbuf = Array{Complex{Float32}}(N2) # destination buf for FFT

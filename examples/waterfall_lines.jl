@@ -6,7 +6,7 @@ N2 = N÷2+1 # size of rfft output
 D = 200 # number of bins to display
 M = 100 # number of lines to draw
 S = 0.5 # motion speed of lines
-src = PortAudioStream(1, 2, blocksize=N)
+src = PortAudioStream(1, 2)
 buf = Array{Float32}(N)
 fftbuf = Array{Complex{Float32}}(N2)
 magbuf = Array{Float32}(N2)

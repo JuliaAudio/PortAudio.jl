@@ -9,10 +9,10 @@ function create_measure_signal()
     return signal
 end
 
-function measure_latency(in_latency = 0.1, out_latency=0.1, blocksize = 32; is_warmup = false)
+function measure_latency(in_latency = 0.1, out_latency=0.1; is_warmup = false)
 
-    in_stream = PortAudioStream(1,0; latency=in_latency, blocksize=32)
-    out_stream = PortAudioStream(0,1; latency=out_latency, blocksize=32)
+    in_stream = PortAudioStream(1,0; latency=in_latency)
+    out_stream = PortAudioStream(0,1; latency=out_latency)
 
     cond = Base.Event()
 
@@ -60,9 +60,7 @@ measure_latency(0.1, 0.1, 32; is_warmup = true) # warmup
 latencies = [0.1, 0.01, 0.005]
 for in_latency in latencies
     for out_latency in latencies
-        for blocksize in [32]
-            measure = measure_latency(in_latency, out_latency, blocksize)
-            println("$measure ms latency for in_latency=$in_latency, out_latency=$out_latency, blocksize=$blocksize")
-        end
+        measure = measure_latency(in_latency, out_latency)
+        println("$measure ms latency for in_latency=$in_latency, out_latency=$out_latency")
     end
 end
