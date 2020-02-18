@@ -78,15 +78,15 @@ mutable struct PortAudioStream{T}
     # TODO: write a latency tester app
     function PortAudioStream{T}(indev::PortAudioDevice, outdev::PortAudioDevice,
                                 inchans, outchans, sr, blocksize,
-                                warn_xruns) where {T}
+                                warn_xruns, latency) where {T}
         inchans = inchans == -1 ? indev.maxinchans : inchans
         outchans = outchans == -1 ? outdev.maxoutchans : outchans
         inparams = (inchans == 0) ?
             Ptr{Pa_StreamParameters}(0) :
-            Ref(Pa_StreamParameters(indev.idx, inchans, type_to_fmt[T], 0.1, C_NULL))
+            Ref(Pa_StreamParameters(indev.idx, inchans, type_to_fmt[T], latency, C_NULL))
         outparams = (outchans == 0) ?
             Ptr{Pa_StreamParameters}(0) :
-            Ref(Pa_StreamParameters(outdev.idx, outchans, type_to_fmt[T], 0.1, C_NULL))
+            Ref(Pa_StreamParameters(outdev.idx, outchans, type_to_fmt[T], latency, C_NULL))
         this = new(sr, blocksize, C_NULL, warn_xruns)
         # finalizer(close, this)
         this.sink = PortAudioSink{T}(outdev.name, this, outchans)
@@ -127,7 +127,7 @@ Options:
 """
 function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
         inchans=2, outchans=2; eltype=Float32, samplerate=-1, blocksize=DEFAULT_BLOCKSIZE,
-        warn_xruns=false)
+        warn_xruns=false, latency=0.1)
     if samplerate == -1
         sampleratein = indev.defaultsamplerate
         samplerateout = outdev.defaultsamplerate
@@ -142,7 +142,7 @@ function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
             samplerate = samplerateout
         end
     end
-    PortAudioStream{eltype}(indev, outdev, inchans, outchans, samplerate, blocksize, warn_xruns)
+    PortAudioStream{eltype}(indev, outdev, inchans, outchans, samplerate, blocksize, warn_xruns, latency)
 end
 
 # handle device names given as streams
