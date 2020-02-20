@@ -103,7 +103,7 @@ mutable struct PortAudioStream{T}
     end
 end
 
-defaultlatency(f, devices...) = maximum(d -> max(d.highoutputlatency, d.highinputlatency), devices)
+defaultlatency(devices...) = maximum(d -> max(d.highoutputlatency, d.highinputlatency), devices)
 
 # this is the top-level outer constructor that all the other outer constructors end up calling
 """
