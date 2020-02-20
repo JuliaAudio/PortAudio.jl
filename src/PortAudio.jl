@@ -213,7 +213,6 @@ end
 isopen(stream::PortAudioStream) = stream.stream != C_NULL
 
 SampledSignals.samplerate(stream::PortAudioStream) = stream.samplerate
-SampledSignals.blocksize(stream::PortAudioStream) = trunc(Int, stream.samplerate * stream.latency)
 eltype(stream::PortAudioStream{T}) where T = T
 
 read(stream::PortAudioStream, args...) = read(stream.source, args...)
@@ -225,7 +224,6 @@ flush(stream::PortAudioStream) = flush(stream.sink)
 function show(io::IO, stream::PortAudioStream)
     println(io, typeof(stream))
     println(io, "  Samplerate: ", samplerate(stream), "Hz")
-    print(io, "  Buffer Size: ", blocksize(stream), " frames")
     if nchannels(stream.sink) > 0
         print(io, "\n  ", nchannels(stream.sink), " channel sink: \"", name(stream.sink), "\"")
     end
@@ -258,7 +256,6 @@ end
 
 SampledSignals.nchannels(s::Union{PortAudioSink, PortAudioSource}) = s.nchannels
 SampledSignals.samplerate(s::Union{PortAudioSink, PortAudioSource}) = samplerate(s.stream)
-SampledSignals.blocksize(s::Union{PortAudioSink, PortAudioSource}) = blocksize(s.stream)
 eltype(::Union{PortAudioSink{T}, PortAudioSource{T}}) where {T} = T
 function close(s::Union{PortAudioSink, PortAudioSource})
     throw(ErrorException("Attempted to close PortAudioSink or PortAudioSource.
