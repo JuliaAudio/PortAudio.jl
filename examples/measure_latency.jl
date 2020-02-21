@@ -55,7 +55,7 @@ function measure_latency(in_latency = 0.1, out_latency=0.1; is_warmup = false)
     return trunc(Int, delay * 1000)# result in ms
 end
 
-measure_latency(0.1, 0.1, 32; is_warmup = true) # warmup
+measure_latency(0.1, 0.1; is_warmup = true) # warmup
 
 latencies = [0.1, 0.01, 0.005]
 for in_latency in latencies
