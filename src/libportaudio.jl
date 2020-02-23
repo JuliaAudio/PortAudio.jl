@@ -233,9 +233,16 @@ end
 function Pa_ReadStream(stream::PaStream, buf::Array, frames::Integer=length(buf),
                        show_warnings::Bool=true)
     frames <= length(buf) || error("Need a buffer at least $frames long")
-    err = @tcall @locked ccall((:Pa_ReadStream, libportaudio), PaError,
-                       (PaStream, Ptr{Cvoid}, Culong),
-                       stream, buf, frames)
+    # without this I get a segfault with the error:
+    # "error thrown and no exception handler available."
+    # if the user tries to ctrl-C. Note I've still had some crash problems with
+    # ctrl-C within `pasuspend`, so for now I think either don't use `pasuspend` or
+    # don't use ctrl-C.
+    err = disable_sigint() do
+        @tcall @locked ccall((:Pa_ReadStream, libportaudio), PaError,
+                             (PaStream, Ptr{Cvoid}, Culong),
+                             stream, buf, frames)
+    end
     handle_status(err, show_warnings)
     buf
 end
@@ -243,9 +250,11 @@ end
 function Pa_WriteStream(stream::PaStream, buf::Array, frames::Integer=length(buf),
                         show_warnings::Bool=true)
     frames <= length(buf) || error("Need a buffer at least $frames long")
-    err = @tcall @locked ccall((:Pa_WriteStream, libportaudio), PaError,
-                       (PaStream, Ptr{Cvoid}, Culong),
-                       stream, buf, frames)
+    err = disable_sigint() do
+        @tcall @locked ccall((:Pa_WriteStream, libportaudio), PaError,
+                             (PaStream, Ptr{Cvoid}, Culong),
+                             stream, buf, frames)
+    end
     handle_status(err, show_warnings)
     nothing
 end
