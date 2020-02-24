@@ -230,10 +230,9 @@ function Pa_GetStreamWriteAvailable(stream::PaStream)
     avail
 end
 
-function Pa_ReadStream(stream::PaStream, buf::Array, frames::Integer=length(buf),
-                       show_warnings::Bool=true)
-    frames <= length(buf) || error("Need a buffer at least $frames long")
-    # without this I get a segfault with the error:
+function Pa_ReadStream(stream::PaStream, buf::Array, frames::Integer,
+                       show_warnings=true)
+    # without disable_sigint I get a segfault with the error:
     # "error thrown and no exception handler available."
     # if the user tries to ctrl-C. Note I've still had some crash problems with
     # ctrl-C within `pasuspend`, so for now I think either don't use `pasuspend` or
@@ -244,19 +243,18 @@ function Pa_ReadStream(stream::PaStream, buf::Array, frames::Integer=length(buf)
                              stream, buf, frames)
     end
     handle_status(err, show_warnings)
-    buf
+    err
 end
 
-function Pa_WriteStream(stream::PaStream, buf::Array, frames::Integer=length(buf),
-                        show_warnings::Bool=true)
-    frames <= length(buf) || error("Need a buffer at least $frames long")
+function Pa_WriteStream(stream::PaStream, buf::Array, frames::Integer,
+                        show_warnings=true)
     err = disable_sigint() do
         @tcall @locked ccall((:Pa_WriteStream, libportaudio), PaError,
                              (PaStream, Ptr{Cvoid}, Culong),
                              stream, buf, frames)
     end
     handle_status(err, show_warnings)
-    nothing
+    err
 end
 
 # function Pa_GetStreamInfo(stream::PaStream)

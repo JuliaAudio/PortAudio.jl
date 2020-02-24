@@ -17,7 +17,7 @@ include("libportaudio.jl")
 
 # data is passed to and from portaudio in chunks with this many frames, because
 # we need to interleave the samples
-const CHUNKSIZE=128
+const CHUNKFRAMES=128
 
 function versioninfo(io::IO=stdout)
     println(io, Pa_GetVersionText())
@@ -58,15 +58,16 @@ end
 # not for external use, used in error message printing
 devnames() = join(["\"$(dev.name)\"" for dev in devices()], "\n")
 
-##################
+#
 # PortAudioStream
-##################
+#
 
 mutable struct PortAudioStream{T}
     samplerate::Float64
     latency::Float64
     stream::PaStream
     warn_xruns::Bool
+    recover_xruns::Bool
     sink # untyped because of circular type definition
     source # untyped because of circular type definition
 
@@ -79,7 +80,7 @@ mutable struct PortAudioStream{T}
     # TODO: figure out whether we can get deterministic latency...
     function PortAudioStream{T}(indev::PortAudioDevice, outdev::PortAudioDevice,
                                 inchans, outchans, sr,
-                                latency, warn_xruns) where {T}
+                                latency, warn_xruns, recover_xruns) where {T}
         inchans = inchans == -1 ? indev.maxinchans : inchans
         outchans = outchans == -1 ? outdev.maxoutchans : outchans
         inparams = (inchans == 0) ?
@@ -88,7 +89,7 @@ mutable struct PortAudioStream{T}
         outparams = (outchans == 0) ?
             Ptr{Pa_StreamParameters}(0) :
             Ref(Pa_StreamParameters(outdev.idx, outchans, type_to_fmt[T], latency, C_NULL))
-        this = new(sr, latency, C_NULL, warn_xruns)
+        this = new(sr, latency, C_NULL, warn_xruns, recover_xruns)
         # finalizer(close, this)
         this.sink = PortAudioSink{T}(outdev.name, this, outchans)
         this.source = PortAudioSource{T}(indev.name, this, inchans)
@@ -98,8 +99,27 @@ mutable struct PortAudioStream{T}
         end
 
         Pa_StartStream(this.stream)
+        # pre-fill the output stream so we're less likely to underrun
+        prefill_output(this.sink)
 
         this
+    end
+end
+
+
+function recover_xrun(stream::PortAudioStream)
+    playback = nchannels(stream.sink) > 0
+    capture = nchannels(stream.source) > 0
+    if playback && capture
+        # the best we can do to avoid further xruns is to fill the playback buffer and
+        # discard the capture buffer. Really there's a fundamental problem with our
+        # read/write-based API where you don't know whether we're currently in a state
+        # when the reads and writes should be balanced. In the future we should probably
+        # move to some kind of transaction API that forces them to be balanced, and also
+        # gives a way for the application to signal that the same number of samples
+        # should have been read as written.
+        discard_input(stream.source)
+        prefill_output(stream.sink)
     end
 end
 
@@ -119,18 +139,21 @@ used.
 
 Options:
 
-* `eltype`:       Sample type of the audio stream (defaults to Float32)
-* `samplerate`:   Sample rate (defaults to device sample rate)
-* `latency`:      Requested latency. Stream could underrun when too low,
-                  consider using provided device defaults
-* `warn_xruns`:   Display a warning if there is a stream overrun or underrun,
-                  which often happens when Julia is compiling, or with a
-                  particularly large GC run. This can be quite verbose so is
-                  false by default.
+* `eltype`:         Sample type of the audio stream (defaults to Float32)
+* `samplerate`:     Sample rate (defaults to device sample rate)
+* `latency`:        Requested latency. Stream could underrun when too low, consider
+                    using provided device defaults
+* `warn_xruns`:     Display a warning if there is a stream overrun or underrun, which
+                    often happens when Julia is compiling, or with a particularly large
+                    GC run. This can be quite verbose so is false by default.
+* `recover_xruns`:  Attempt to recover from overruns and underruns by emptying and
+                    filling the input and output buffers, respectively. Should result in
+                    fewer xruns but could make each xrun more audible. True by default.
+                    Only effects duplex streams.
 """
 function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
         inchans=2, outchans=2; eltype=Float32, samplerate=-1,
-        latency=defaultlatency(indev, outdev), warn_xruns=false)
+        latency=defaultlatency(indev, outdev), warn_xruns=false, recover_xruns=true)
     if samplerate == -1
         sampleratein = indev.defaultsamplerate
         samplerateout = outdev.defaultsamplerate
@@ -145,7 +168,8 @@ function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
             samplerate = samplerateout
         end
     end
-    PortAudioStream{eltype}(indev, outdev, inchans, outchans, samplerate, latency, warn_xruns)
+    PortAudioStream{eltype}(indev, outdev, inchans, outchans, samplerate,
+                            latency, warn_xruns, recover_xruns)
 end
 
 # handle device names given as streams
@@ -230,9 +254,9 @@ function show(io::IO, stream::PortAudioStream)
     end
 end
 
-##################################
+#
 # PortAudioSink & PortAudioSource
-##################################
+#
 
 # Define our source and sink types
 for (TypeName, Super) in ((:PortAudioSink, :SampleSink),
@@ -246,7 +270,7 @@ for (TypeName, Super) in ((:PortAudioSink, :SampleSink),
         function $TypeName{T}(name, stream, channels) where {T}
             # portaudio data comes in interleaved, so we'll end up transposing
             # it back and forth to julia column-major
-            chunkbuf = zeros(T, channels, CHUNKSIZE)
+            chunkbuf = zeros(T, channels, CHUNKFRAMES)
             new(name, stream, chunkbuf, channels)
         end
     end
@@ -277,13 +301,17 @@ end
 function SampledSignals.unsafe_write(sink::PortAudioSink, buf::Array, frameoffset, framecount)
     nwritten = 0
     while nwritten < framecount
-        n = min(framecount-nwritten, CHUNKSIZE)
+        n = min(framecount-nwritten, CHUNKFRAMES)
         # make a buffer of interleaved samples
         transpose!(view(sink.chunkbuf, :, 1:n),
                    view(buf, (1:n) .+ nwritten .+ frameoffset, :))
         # TODO: if the stream is closed we just want to return a
         # shorter-than-requested frame count instead of throwing an error
-        Pa_WriteStream(sink.stream.stream, sink.chunkbuf, n, sink.stream.warn_xruns)
+        err = Pa_WriteStream(sink.stream.stream, sink.chunkbuf, n,
+                             sink.stream.warn_xruns)
+        if err ∈ (PA_OUTPUT_UNDERFLOWED, PA_INPUT_OVERFLOWED) && sink.stream.recover_xruns
+            recover_xrun(sink.stream)
+        end
         nwritten += n
     end
 
@@ -293,10 +321,14 @@ end
 function SampledSignals.unsafe_read!(source::PortAudioSource, buf::Array, frameoffset, framecount)
     nread = 0
     while nread < framecount
-        n = min(framecount-nread, CHUNKSIZE)
+        n = min(framecount-nread, CHUNKFRAMES)
         # TODO: if the stream is closed we just want to return a
         # shorter-than-requested frame count instead of throwing an error
-        Pa_ReadStream(source.stream.stream, source.chunkbuf, n, source.stream.warn_xruns)
+        err = Pa_ReadStream(source.stream.stream, source.chunkbuf, n,
+                            source.stream.warn_xruns)
+        if err ∈ (PA_OUTPUT_UNDERFLOWED, PA_INPUT_OVERFLOWED) && source.stream.recover_xruns
+            recover_xrun(source.stream)
+        end
         # de-interleave the samples
         transpose!(view(buf, (1:n) .+ nread .+ frameoffset, :),
                    view(source.chunkbuf, :, 1:n))
@@ -305,6 +337,35 @@ function SampledSignals.unsafe_read!(source::PortAudioSource, buf::Array, frameo
     end
 
     nread
+end
+
+"""
+    prefill_output(sink::PortAudioSink)
+
+Fill the playback buffer of the given sink.
+"""
+function prefill_output(sink::PortAudioSink)
+    towrite = Pa_GetStreamWriteAvailable(sink.stream.stream)
+    while towrite > 0
+        n = min(towrite, CHUNKFRAMES)
+        fill!(sink.chunkbuf, zero(eltype(sink.chunkbuf)))
+        Pa_WriteStream(sink.stream.stream, sink.chunkbuf, n, false)
+        towrite -= n
+    end
+end
+
+"""
+    discard_input(source::PortAudioSource)
+
+Read and discard data from the capture buffer.
+"""
+function discard_input(source::PortAudioSource)
+    toread = Pa_GetStreamReadAvailable(source.stream.stream)
+    while toread > 0
+        n = min(toread, CHUNKFRAMES)
+        Pa_ReadStream(source.stream.stream, source.chunkbuf, n, false)
+        toread -= n
+    end
 end
 
 function suppress_err(dofunc::Function)
