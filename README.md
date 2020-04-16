@@ -94,14 +94,3 @@ julia> close(stream)
 
 julia> save(joinpath(homedir(), "Desktop", "myvoice.ogg"), buf)
 ```
-
-## Building the shim library
-
-Because PortAudio calls its callback from a separate audio thread, we can't handle it in Julia directly. To work around this we've included a small shim library written in C that uses ring buffers to pass audio data between the callback context and the main Julia context. To build the shim you'll need a few prerequisites:
-
-* libportaudio
-* make
-* a C compiler (gcc on linux/macOS, mingw64 on Windows)
-* The `RingBuffers` julia package, installed in a folder next to this one. The portaudio shim links against the `pa_ringbuffer` library that comes with `RingBuffers`.
-
-To build the shim, go into the `deps/src` directory and type `make`.
