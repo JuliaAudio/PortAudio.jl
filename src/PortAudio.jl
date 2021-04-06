@@ -1,5 +1,6 @@
 module PortAudio
 
+using alsa_plugins_jll
 using libportaudio_jll, SampledSignals
 
 import Base: eltype, show
