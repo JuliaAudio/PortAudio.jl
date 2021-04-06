@@ -19,7 +19,17 @@ const PA_NO_ERROR = 0
 const PA_INPUT_OVERFLOWED = -10000 + 19
 const PA_OUTPUT_UNDERFLOWED = -10000 + 20
 
-const PLUGINS = "ALSA_PLUGIN_DIR" => joinpath(alsa_plugins_jll.artifact_dir, "lib", "alsa-lib")
+const PLUGINS = 
+    "ALSA_PLUGIN_DIR" => try 
+        joinpath(alsa_plugins_jll.artifact_dir, "lib", "alsa-lib")
+    catch an_error
+        if an_error isa UndefVarError
+            nothing
+        else
+            rethrow(an_error)
+        end
+    end
+    
 
 # sample format types
 const paFloat32 = PaSampleFormat(0x01)
