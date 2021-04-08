@@ -20,14 +20,10 @@ const PA_INPUT_OVERFLOWED = -10000 + 19
 const PA_OUTPUT_UNDERFLOWED = -10000 + 20
 
 const PLUGINS = 
-    "ALSA_PLUGIN_DIR" => try 
+    "ALSA_PLUGIN_DIR" => if alsa_plugins_jll.is_available()
         joinpath(alsa_plugins_jll.artifact_dir, "lib", "alsa-lib")
-    catch an_error
-        if an_error isa UndefVarError
-            nothing
-        else
-            rethrow(an_error)
-        end
+    else
+        nothing
     end
     
 
