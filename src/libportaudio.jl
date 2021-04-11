@@ -19,14 +19,6 @@ const PA_NO_ERROR = 0
 const PA_INPUT_OVERFLOWED = -10000 + 19
 const PA_OUTPUT_UNDERFLOWED = -10000 + 20
 
-const PLUGINS = 
-    "ALSA_PLUGIN_DIR" => if alsa_plugins_jll.is_available()
-        joinpath(alsa_plugins_jll.artifact_dir, "lib", "alsa-lib")
-    else
-        nothing
-    end
-    
-
 # sample format types
 const paFloat32 = PaSampleFormat(0x01)
 const paInt32   = PaSampleFormat(0x02)
@@ -73,27 +65,19 @@ macro locked(ex)
 end
 
 function Pa_Initialize()
-    err = @locked withenv(PLUGINS) do
-        ccall((:Pa_Initialize, libportaudio), PaError, ())
-    end
+    err = @locked ccall((:Pa_Initialize, libportaudio), PaError, ())
     handle_status(err)
 end
 
 function Pa_Terminate()
-    err = @locked withenv(PLUGINS) do
-        ccall((:Pa_Terminate, libportaudio), PaError, ())
-    end
+    err = @locked ccall((:Pa_Terminate, libportaudio), PaError, ())
     handle_status(err)
 end
 
-Pa_GetVersion() = @locked withenv(PLUGINS) do
-    ccall((:Pa_GetVersion, libportaudio), Cint, ())
-end
+Pa_GetVersion() = @locked ccall((:Pa_GetVersion, libportaudio), Cint, ())
 
 function Pa_GetVersionText()
-    versionPtr = @locked withenv(PLUGINS) do
-        ccall((:Pa_GetVersionText, libportaudio), Ptr{Cchar}, ())
-    end
+    versionPtr = @locked ccall((:Pa_GetVersionText, libportaudio), Ptr{Cchar}, ())
     unsafe_string(versionPtr)
 end
 
@@ -132,9 +116,8 @@ mutable struct PaHostApiInfo
     defaultOutputDevice::PaDeviceIndex
 end
 
-Pa_GetHostApiInfo(i) = unsafe_load(@locked withenv(PLUGINS) do
-    ccall((:Pa_GetHostApiInfo, libportaudio), Ptr{PaHostApiInfo}, (PaHostApiIndex,), i)
-end)
+Pa_GetHostApiInfo(i) = unsafe_load(@locked ccall((:Pa_GetHostApiInfo, libportaudio),
+                                   Ptr{PaHostApiInfo}, (PaHostApiIndex,), i))
 
 # Device Functions
 
@@ -151,21 +134,16 @@ mutable struct PaDeviceInfo
     default_sample_rate::Cdouble
 end
 
-Pa_GetDeviceCount() = @locked withenv(PLUGINS) do
-    ccall((:Pa_GetDeviceCount, libportaudio), PaDeviceIndex, ())
-end
+Pa_GetDeviceCount() = @locked ccall((:Pa_GetDeviceCount, libportaudio), PaDeviceIndex, ())
 
-Pa_GetDeviceInfo(i) = unsafe_load(@locked withenv(PLUGINS) do
-    ccall((:Pa_GetDeviceInfo, libportaudio), Ptr{PaDeviceInfo}, (PaDeviceIndex,), i)
-end)
+Pa_GetDeviceInfo(i) = unsafe_load(@locked ccall((:Pa_GetDeviceInfo, libportaudio),
+                                 Ptr{PaDeviceInfo}, (PaDeviceIndex,), i))
 
-Pa_GetDefaultInputDevice() = @locked withenv(PLUGINS) do 
-    ccall((:Pa_GetDefaultInputDevice, libportaudio), PaDeviceIndex, ())
-end
+Pa_GetDefaultInputDevice() = @locked ccall((:Pa_GetDefaultInputDevice, libportaudio),
+                                   PaDeviceIndex, ())
 
-Pa_GetDefaultOutputDevice() = @locked withenv(PLUGINS) do
-    ccall((:Pa_GetDefaultOutputDevice, libportaudio), PaDeviceIndex, ())
-end
+Pa_GetDefaultOutputDevice() = @locked ccall((:Pa_GetDefaultOutputDevice, libportaudio),
+                                    PaDeviceIndex, ())
 
 # Stream Functions
 
@@ -188,14 +166,12 @@ end
 #                               sampleFormat::PaSampleFormat,
 #                               sampleRate, framesPerBuffer)
 #     streamPtr = Ref{PaStream}(0)
-#     err = withenv(PLUGINS) do
-#         ccall((:Pa_OpenDefaultStream, libportaudio),
+#     err = ccall((:Pa_OpenDefaultStream, libportaudio),
 #                 PaError, (Ref{PaStream}, Cint, Cint,
 #                           PaSampleFormat, Cdouble, Culong,
 #                           Ref{Cvoid}, Ref{Cvoid}),
 #                 streamPtr, inChannels, outChannels, sampleFormat, sampleRate,
 #                 framesPerBuffer, C_NULL, C_NULL)
-#     end
 #     handle_status(err)
 #
 #     streamPtr[]
@@ -206,8 +182,7 @@ function Pa_OpenStream(inParams, outParams,
                        flags::PaStreamFlags,
                        callback, userdata)
     streamPtr = Ref{PaStream}(0)
-    err = @locked withenv(PLUGINS) do
-        ccall((:Pa_OpenStream, libportaudio), PaError,
+    err = @locked ccall((:Pa_OpenStream, libportaudio), PaError,
                 (Ref{PaStream}, Ref{Pa_StreamParameters}, Ref{Pa_StreamParameters},
                 Cdouble, Culong, PaStreamFlags, Ref{Cvoid},
                 # it seems like we should be able to use Ref{T} here, with
@@ -219,44 +194,38 @@ function Pa_OpenStream(inParams, outParams,
                 float(sampleRate), framesPerBuffer, flags,
                 callback === nothing ? C_NULL : callback,
                 userdata === nothing ? C_NULL : pointer_from_objref(userdata))
-    end
     handle_status(err)
     streamPtr[]
 end
 
 function Pa_StartStream(stream::PaStream)
-    err = @locked withenv(PLUGINS) do 
-        ccall((:Pa_StartStream, libportaudio), PaError, (PaStream,), stream)
-    end
+    err = @locked ccall((:Pa_StartStream, libportaudio), PaError,
+                (PaStream,), stream)
     handle_status(err)
 end
 
 function Pa_StopStream(stream::PaStream)
-    err = @locked withenv(PLUGINS) do
-        ccall((:Pa_StopStream, libportaudio), PaError, (PaStream,), stream)
-    end
+    err = @locked ccall((:Pa_StopStream, libportaudio), PaError,
+                (PaStream,), stream)
     handle_status(err)
 end
 
 function Pa_CloseStream(stream::PaStream)
-    err = @locked withenv(PLUGINS) do
-        ccall((:Pa_CloseStream, libportaudio), PaError, (PaStream,), stream)
-    end
+    err = @locked ccall((:Pa_CloseStream, libportaudio), PaError,
+                (PaStream,), stream)
     handle_status(err)
 end
 
 function Pa_GetStreamReadAvailable(stream::PaStream)
-    avail = @locked withenv(PLUGINS) do
-        ccall((:Pa_GetStreamReadAvailable, libportaudio), Clong, (PaStream,), stream)
-    end
+    avail = @locked ccall((:Pa_GetStreamReadAvailable, libportaudio), Clong,
+                (PaStream,), stream)
     avail >= 0 || handle_status(avail)
     avail
 end
 
 function Pa_GetStreamWriteAvailable(stream::PaStream)
-    avail = @locked withenv(PLUGINS) do 
-        ccall((:Pa_GetStreamWriteAvailable, libportaudio), Clong, (PaStream,), stream)
-    end
+    avail = @locked ccall((:Pa_GetStreamWriteAvailable, libportaudio), Clong,
+                (PaStream,), stream)
     avail >= 0 || handle_status(avail)
     avail
 end
@@ -269,9 +238,9 @@ function Pa_ReadStream(stream::PaStream, buf::Array, frames::Integer,
     # ctrl-C within `pasuspend`, so for now I think either don't use `pasuspend` or
     # don't use ctrl-C.
     err = disable_sigint() do
-        @tcall @locked withenv(PLUGINS) do
-            ccall((:Pa_ReadStream, libportaudio), PaError, (PaStream, Ptr{Cvoid}, Culong), stream, buf, frames)
-        end
+        @tcall @locked ccall((:Pa_ReadStream, libportaudio), PaError,
+                             (PaStream, Ptr{Cvoid}, Culong),
+                             stream, buf, frames)
     end
     handle_status(err, show_warnings)
     err
@@ -280,18 +249,18 @@ end
 function Pa_WriteStream(stream::PaStream, buf::Array, frames::Integer,
                         show_warnings=true)
     err = disable_sigint() do
-        @tcall @locked withenv(PLUGINS) do 
-            ccall((:Pa_WriteStream, libportaudio), PaError, (PaStream, Ptr{Cvoid}, Culong), stream, buf, frames)
-        end
+        @tcall @locked ccall((:Pa_WriteStream, libportaudio), PaError,
+                             (PaStream, Ptr{Cvoid}, Culong),
+                             stream, buf, frames)
     end
     handle_status(err, show_warnings)
     err
 end
 
 # function Pa_GetStreamInfo(stream::PaStream)
-#     infoptr = withenv(PLUGINS) do
-#         ccall((:Pa_GetStreamInfo, libportaudio), Ptr{PaStreamInfo}, (PaStream, ), stream)
-#     end
+#     infoptr = ccall((:Pa_GetStreamInfo, libportaudio), Ptr{PaStreamInfo},
+#             (PaStream, ), stream)
+#
 #     unsafe_load(infoptr)
 # end
 #
@@ -299,15 +268,13 @@ end
 function handle_status(err::PaError, show_warnings::Bool=true)
     if err == PA_OUTPUT_UNDERFLOWED || err == PA_INPUT_OVERFLOWED
         if show_warnings
-            msg = @locked withenv(PLUGINS) do
-                ccall((:Pa_GetErrorText, libportaudio), Ptr{Cchar}, (PaError,), err)
-            end
+            msg = @locked ccall((:Pa_GetErrorText, libportaudio),
+                        Ptr{Cchar}, (PaError,), err)
             @warn("libportaudio: " * unsafe_string(msg))
         end
     elseif err != PA_NO_ERROR
-        msg = @locked withenv(PLUGINS) do
-            ccall((:Pa_GetErrorText, libportaudio), Ptr{Cchar}, (PaError,), err)
-        end
+        msg = @locked ccall((:Pa_GetErrorText, libportaudio),
+                    Ptr{Cchar}, (PaError,), err)
         throw(ErrorException("libportaudio: " * unsafe_string(msg)))
     end
 end
