@@ -1,7 +1,9 @@
 #!/usr/bin/env julia
 
 using PortAudio
+using PortAudio: Pa_GetDefaultInputDevice, Pa_GetDefaultOutputDevice, Pa_GetDeviceInfo, PortAudioDevice
 using Test
+using SampledSignals
 
 @testset "PortAudio Tests" begin
     @testset "Reports version" begin
@@ -19,16 +21,10 @@ end
 
 if !isempty(PortAudio.devices())
     # these default values are specific to my machines
-    if Sys.iswindows()
-        default_indev = "Microphone Array (Realtek High "
-        default_outdev = "Speaker/Headphone (Realtek High"
-    elseif Sys.isapple()
-        default_indev = "Built-in Microphone"
-        default_outdev = "Built-in Output"
-    elseif Sys.islinux()
-        default_indev = "default"
-        default_outdev = "default"
-    end
+    inidx = Pa_GetDefaultInputDevice()
+    default_indev = PortAudioDevice(Pa_GetDeviceInfo(inidx), inidx).name
+    outidx = Pa_GetDefaultOutputDevice()
+    default_outdev = PortAudioDevice(Pa_GetDeviceInfo(outidx), outidx).name
 
     @testset "Local Tests" begin
         @testset "Open Default Device" begin
