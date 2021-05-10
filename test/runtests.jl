@@ -36,13 +36,10 @@ if !isempty(PortAudio.devices())
             println("Playing back recording...")
             stream = PortAudioStream(0, 2)
             write(stream, buf)
-            println("flushing...")
-            flush(stream)
             close(stream)
             println("Testing pass-through")
             stream = PortAudioStream(2, 2)
             write(stream, stream, 5s)
-            flush(stream)
             close(stream)
             println("done")
         end
@@ -50,7 +47,6 @@ if !isempty(PortAudio.devices())
             stream = PortAudioStream(0, 2)
             write(stream, SinSource(eltype(stream), samplerate(stream)*0.8, [220, 330]), 3s)
             write(stream, SinSource(eltype(stream), samplerate(stream)*1.2, [220, 330]), 3s)
-            flush(stream)
             close(stream)
         end
         @testset "Open Device by name" begin
@@ -63,7 +59,7 @@ if !isempty(PortAudio.devices())
             @test occursin("""
             PortAudioStream{Float32}
               Samplerate: 44100.0Hz
-              Buffer Size: 4096 frames
+            
               2 channel sink: "$default_outdev"
               2 channel source: "$default_indev\"""", String(take!(io)))
             close(stream)
@@ -80,7 +76,6 @@ if !isempty(PortAudio.devices())
             t2 = @async write(stream, buf)
             @test fetch(t1) == 48000
             @test fetch(t2) == 48000
-            flush(stream)
             close(stream)
         end
         @testset "Queued Reading" begin
