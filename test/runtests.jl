@@ -14,5 +14,6 @@ using Test
 
     @testset "Can list devices without crashing" begin
         PortAudio.devices()
+        show(PortAudio.devices())
     end
 end
