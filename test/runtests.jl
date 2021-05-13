@@ -1,7 +1,7 @@
 #!/usr/bin/env julia
 
 using PortAudio
-using PortAudio: Pa_GetDefaultInputDevice, Pa_GetDefaultOutputDevice, Pa_GetDeviceInfo, PortAudioDevice
+using PortAudio: Pa_GetDefaultInputDevice, Pa_GetDefaultOutputDevice, Pa_GetDeviceInfo, Pa_GetHostApiInfo, PortAudioDevice
 using Test
 using SampledSignals
 
@@ -16,6 +16,11 @@ using SampledSignals
 
     @testset "Can list devices without crashing" begin
         PortAudio.devices()
+    end
+
+    @testset "Null errors" begin
+        @test_throws BoundsError Pa_GetDeviceInfo(-1)
+        @test_throws BoundsError Pa_GetHostApiInfo(-1)
     end
 end
 
