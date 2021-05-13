@@ -404,8 +404,9 @@ function __init__()
             ENV[envkey] = confdir
         end
 
-        if alsa_plugins_jll.is_available()
-            get!(ENV, "ALSA_PLUGIN_DIR", joinpath(alsa_plugins_jll.artifact_dir, "lib", "alsa-lib"))
+        plugin_key = "ALSA_PLUGIN_DIR"
+        if plugin_key ∉ keys(ENV) && alsa_plugins_jll.is_available()
+            ENV[plugin_key] = joinpath(alsa_plugins_jll.artifact_dir, "lib", "alsa-lib")
         end
     end
     # initialize PortAudio on module load. libportaudio prints a bunch of
