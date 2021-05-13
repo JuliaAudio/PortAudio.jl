@@ -4,7 +4,7 @@ using libportaudio_jll, SampledSignals
 
 import Base: eltype, show
 import Base: close, isopen
-import Base: read, read!, write, flush
+import Base: read, read!, write
 
 import LinearAlgebra
 import LinearAlgebra: transpose!
@@ -241,7 +241,6 @@ read(stream::PortAudioStream, args...) = read(stream.source, args...)
 read!(stream::PortAudioStream, args...) = read!(stream.source, args...)
 write(stream::PortAudioStream, args...) = write(stream.sink, args...)
 write(sink::PortAudioStream, source::PortAudioStream, args...) = write(sink.sink, source.source, args...)
-flush(stream::PortAudioStream) = flush(stream.sink)
 
 function show(io::IO, stream::PortAudioStream)
     println(io, typeof(stream))
