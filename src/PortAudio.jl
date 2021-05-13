@@ -344,12 +344,14 @@ end
 Fill the playback buffer of the given sink.
 """
 function prefill_output(sink::PortAudioSink)
-    towrite = Pa_GetStreamWriteAvailable(sink.stream.stream)
-    while towrite > 0
-        n = min(towrite, CHUNKFRAMES)
-        fill!(sink.chunkbuf, zero(eltype(sink.chunkbuf)))
-        Pa_WriteStream(sink.stream.stream, sink.chunkbuf, n, false)
-        towrite -= n
+    if nchannels(sink) > 0
+        towrite = Pa_GetStreamWriteAvailable(sink.stream.stream)
+        while towrite > 0
+            n = min(towrite, CHUNKFRAMES)
+            fill!(sink.chunkbuf, zero(eltype(sink.chunkbuf)))
+            Pa_WriteStream(sink.stream.stream, sink.chunkbuf, n, false)
+            towrite -= n
+        end
     end
 end
 
