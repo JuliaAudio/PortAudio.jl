@@ -116,8 +116,14 @@ mutable struct PaHostApiInfo
     defaultOutputDevice::PaDeviceIndex
 end
 
-Pa_GetHostApiInfo(i) = unsafe_load(@locked ccall((:Pa_GetHostApiInfo, libportaudio),
-                                   Ptr{PaHostApiInfo}, (PaHostApiIndex,), i))
+function Pa_GetHostApiInfo(i)
+    result = @locked ccall((:Pa_GetHostApiInfo, libportaudio),
+        Ptr{PaHostApiInfo}, (PaHostApiIndex,), i)
+    if result == C_NULL
+        throw(BoundsError(Pa_GetHostApiInfo, i))
+    end
+    unsafe_load(result)
+end
 
 # Device Functions
 
@@ -136,8 +142,14 @@ end
 
 Pa_GetDeviceCount() = @locked ccall((:Pa_GetDeviceCount, libportaudio), PaDeviceIndex, ())
 
-Pa_GetDeviceInfo(i) = unsafe_load(@locked ccall((:Pa_GetDeviceInfo, libportaudio),
-                                 Ptr{PaDeviceInfo}, (PaDeviceIndex,), i))
+function Pa_GetDeviceInfo(i)
+    result = @locked ccall((:Pa_GetDeviceInfo, libportaudio),
+        Ptr{PaDeviceInfo}, (PaDeviceIndex,), i)
+    if result == C_NULL
+        throw(BoundsError(Pa_GetDeviceInfo, i))
+    end
+    unsafe_load(result)
+end
 
 Pa_GetDefaultInputDevice() = @locked ccall((:Pa_GetDefaultInputDevice, libportaudio),
                                    PaDeviceIndex, ())
@@ -260,7 +272,9 @@ end
 # function Pa_GetStreamInfo(stream::PaStream)
 #     infoptr = ccall((:Pa_GetStreamInfo, libportaudio), Ptr{PaStreamInfo},
 #             (PaStream, ), stream)
-#
+#     if infoptr == C_NULL
+#         error("Error getting stream info. Is the stream already closed?")
+#     end
 #     unsafe_load(infoptr)
 # end
 #
