@@ -368,10 +368,9 @@ function discard_input(source::PortAudioSource)
 end
 
 function suppress_err(dofunc::Function)
-    nullfile = @static Sys.iswindows() ? "nul" : "/dev/null"
-    open(nullfile, "w") do io
-        redirect_stderr(dofunc, io)
-    end
+    io = IOBuffer()
+    redirect_stderr(dofunc, io)
+    @debug String(take!(io))
 end
 
 function __init__()
