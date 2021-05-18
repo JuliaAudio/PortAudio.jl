@@ -1,6 +1,6 @@
 module PortAudio
 
-using libportaudio_jll: libportaudio_jll
+using libportaudio_jll: libportaudio
 using SampledSignals
 using Suppressor: @capture_err
 
@@ -14,6 +14,15 @@ import LinearAlgebra: transpose!
 export PortAudioStream
 
 include("libportaudio.jl")
+
+macro stderr_as_debug(expression)
+    quote
+        local result
+        debug_message = @capture_err result = $(esc(expression))
+        @debug "$debug_message"
+        result
+    end
+end
 
 # This size is in frames
 
@@ -364,14 +373,6 @@ function discard_input(source::PortAudioSource)
         n = min(toread, CHUNKFRAMES)
         Pa_ReadStream(source.stream.stream, source.chunkbuf, n, false)
         toread -= n
-    end
-end
-
-macro stderr_as_debug(expression)
-    quote
-        debug_message = @capture_err result = $(esc(expression))
-        @debug debug_message
-        result
     end
 end
 
