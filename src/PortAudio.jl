@@ -19,7 +19,7 @@ macro stderr_as_debug(expression)
     quote
         local result
         debug_message = @capture_err result = $(esc(expression))
-        @debug "$debug_message"
+        @debug debug_message
         result
     end
 end
