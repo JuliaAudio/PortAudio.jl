@@ -242,8 +242,7 @@ function Pa_GetStreamWriteAvailable(stream::PaStream)
     avail
 end
 
-function Pa_ReadStream(stream::PaStream, buf::Array, frames::Integer,
-                       show_warnings=true)
+function Pa_ReadStream(stream::PaStream, buf::Array, frames::Integer)
     # without disable_sigint I get a segfault with the error:
     # "error thrown and no exception handler available."
     # if the user tries to ctrl-C. Note I've still had some crash problems with
@@ -254,18 +253,17 @@ function Pa_ReadStream(stream::PaStream, buf::Array, frames::Integer,
                              (PaStream, Ptr{Cvoid}, Culong),
                              stream, buf, frames)
     end
-    handle_status(err, show_warnings)
+    handle_status(err)
     err
 end
 
-function Pa_WriteStream(stream::PaStream, buf::Array, frames::Integer,
-                        show_warnings=true)
+function Pa_WriteStream(stream::PaStream, buf::Array, frames::Integer)
     err = disable_sigint() do
         @tcall @locked ccall((:Pa_WriteStream, libportaudio), PaError,
                              (PaStream, Ptr{Cvoid}, Culong),
                              stream, buf, frames)
     end
-    handle_status(err, show_warnings)
+    handle_status(err)
     err
 end
 
@@ -279,13 +277,12 @@ end
 # end
 #
 # General utility function to handle the status from the Pa_* functions
-function handle_status(err::PaError, show_warnings::Bool=true)
+function handle_status(err::PaError)
     if err == PA_OUTPUT_UNDERFLOWED || err == PA_INPUT_OVERFLOWED
-        if show_warnings
-            msg = @locked ccall((:Pa_GetErrorText, libportaudio),
-                        Ptr{Cchar}, (PaError,), err)
-            @warn("libportaudio: " * unsafe_string(msg))
-        end
+        @debug unsafe_string(
+            @locked ccall((:Pa_GetErrorText, libportaudio),
+                Ptr{Cchar}, (PaError,), err)
+        )
     elseif err != PA_NO_ERROR
         msg = @locked ccall((:Pa_GetErrorText, libportaudio),
                     Ptr{Cchar}, (PaError,), err)
