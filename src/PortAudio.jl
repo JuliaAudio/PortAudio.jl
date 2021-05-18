@@ -369,8 +369,9 @@ end
 
 macro stderr_as_debug(expression)
     quote
-        debug_message = @capture_err $(esc(expression))
+        debug_message = @capture_err result = $(esc(expression))
         @debug debug_message
+        result
     end
 end
 
