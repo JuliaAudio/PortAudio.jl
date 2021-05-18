@@ -1,6 +1,8 @@
 module PortAudio
 
-using libportaudio_jll, SampledSignals
+using libportaudio_jll: libportaudio_jll
+using SampledSignals
+using Suppressor: @capture_err
 
 import Base: eltype, show
 import Base: close, isopen
@@ -368,9 +370,8 @@ function discard_input(source::PortAudioSource)
 end
 
 function suppress_err(dofunc::Function)
-    io = IOBuffer()
-    redirect_stderr(dofunc, io)
-    @debug String(take!(io))
+    debug_message = @suppress_err dofunc()
+    @debug debug_message
 end
 
 function __init__()
