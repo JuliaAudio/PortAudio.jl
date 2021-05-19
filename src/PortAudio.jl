@@ -77,6 +77,7 @@ mutable struct PortAudioStream{T}
     samplerate::Float64
     latency::Float64
     stream::PaStream
+    warn_xruns::Bool
     recover_xruns::Bool
     sink # untyped because of circular type definition
     source # untyped because of circular type definition
@@ -90,7 +91,7 @@ mutable struct PortAudioStream{T}
     # TODO: figure out whether we can get deterministic latency...
     function PortAudioStream{T}(indev::PortAudioDevice, outdev::PortAudioDevice,
                                 inchans, outchans, sr,
-                                latency, recover_xruns) where {T}
+                                latency, warn_xruns, recover_xruns) where {T}
         inchans = inchans == -1 ? indev.maxinchans : inchans
         outchans = outchans == -1 ? outdev.maxoutchans : outchans
         inparams = (inchans == 0) ?
@@ -99,7 +100,7 @@ mutable struct PortAudioStream{T}
         outparams = (outchans == 0) ?
             Ptr{Pa_StreamParameters}(0) :
             Ref(Pa_StreamParameters(outdev.idx, outchans, type_to_fmt[T], latency, C_NULL))
-        this = new(sr, latency, C_NULL, recover_xruns)
+        this = new(sr, latency, C_NULL, warn_xruns, recover_xruns)
         # finalizer(close, this)
         this.sink = PortAudioSink{T}(outdev.name, this, outchans)
         this.source = PortAudioSource{T}(indev.name, this, inchans)
@@ -143,7 +144,7 @@ Audio devices can either be `PortAudioDevice` instances as returned
 by `PortAudio.devices()`, or strings with the device name as reported by the
 operating system. If a single `duplexdevice` is given it will be used for both
 input and output. If no devices are given the system default devices will be
-used. Over- and under-run messages will be sent to the debug log.
+used.
 
 Options:
 
@@ -151,6 +152,9 @@ Options:
 * `samplerate`:     Sample rate (defaults to device sample rate)
 * `latency`:        Requested latency. Stream could underrun when too low, consider
                     using provided device defaults
+* `warn_xruns`:     Display a warning if there is a stream overrun or underrun, which
+                    often happens when Julia is compiling, or with a particularly large
+                    GC run. This can be quite verbose so is false by default.
 * `recover_xruns`:  Attempt to recover from overruns and underruns by emptying and
                     filling the input and output buffers, respectively. Should result in
                     fewer xruns but could make each xrun more audible. True by default.
@@ -158,7 +162,7 @@ Options:
 """
 function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
         inchans=2, outchans=2; eltype=Float32, samplerate=-1,
-        latency=defaultlatency(indev, outdev), recover_xruns=true)
+        latency=defaultlatency(indev, outdev), warn_xruns=false, recover_xruns=true)
     if samplerate == -1
         sampleratein = indev.defaultsamplerate
         samplerateout = outdev.defaultsamplerate
@@ -174,7 +178,7 @@ function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
         end
     end
     PortAudioStream{eltype}(indev, outdev, inchans, outchans, samplerate,
-                            latency, recover_xruns)
+                            latency, warn_xruns, recover_xruns)
 end
 
 # handle device names given as streams
@@ -311,7 +315,8 @@ function SampledSignals.unsafe_write(sink::PortAudioSink, buf::Array, frameoffse
                    view(buf, (1:n) .+ nwritten .+ frameoffset, :))
         # TODO: if the stream is closed we just want to return a
         # shorter-than-requested frame count instead of throwing an error
-        err = Pa_WriteStream(sink.stream.stream, sink.chunkbuf, n)
+        err = Pa_WriteStream(sink.stream.stream, sink.chunkbuf, n,
+                             sink.stream.warn_xruns)
         if err ∈ (PA_OUTPUT_UNDERFLOWED, PA_INPUT_OVERFLOWED) && sink.stream.recover_xruns
             recover_xrun(sink.stream)
         end
@@ -327,7 +332,8 @@ function SampledSignals.unsafe_read!(source::PortAudioSource, buf::Array, frameo
         n = min(framecount-nread, CHUNKFRAMES)
         # TODO: if the stream is closed we just want to return a
         # shorter-than-requested frame count instead of throwing an error
-        err = Pa_ReadStream(source.stream.stream, source.chunkbuf, n)
+        err = Pa_ReadStream(source.stream.stream, source.chunkbuf, n,
+                            source.stream.warn_xruns)
         if err ∈ (PA_OUTPUT_UNDERFLOWED, PA_INPUT_OVERFLOWED) && source.stream.recover_xruns
             recover_xrun(source.stream)
         end
