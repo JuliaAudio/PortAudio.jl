@@ -45,6 +45,16 @@ The `PortAudioStream` type has `source` and `sink` fields which are of type `Por
 
 PortAudio.jl also provides convenience wrappers around the `PortAudioStream` type so you can read and write to it directly, e.g. `write(stream, stream)` will set up a loopback that will read from the input and play it back on the output.
 
+## Debugging
+
+If you are experiencing issues and wish to view detailed logging and debug information, set
+
+```
+ENV["JULIA_DEBUG"] = :PortAudio
+```
+
+before using the package.
+
 ## Examples
 
 ### Set up an audio pass-through from microphone to speaker
