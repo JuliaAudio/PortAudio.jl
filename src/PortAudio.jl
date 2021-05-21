@@ -1,5 +1,6 @@
 module PortAudio
 
+using alsa_plugins_jll: alsa_plugins_jll
 using libportaudio_jll, SampledSignals
 
 import Base: eltype, show
@@ -401,6 +402,11 @@ function __init__()
             end
             confdir = searchdirs[confdir_idx]
             ENV[envkey] = confdir
+        end
+
+        plugin_key = "ALSA_PLUGIN_DIR"
+        if plugin_key ∉ keys(ENV) && alsa_plugins_jll.is_available()
+            ENV[plugin_key] = joinpath(alsa_plugins_jll.artifact_dir, "lib", "alsa-lib")
         end
     end
     # initialize PortAudio on module load. libportaudio prints a bunch of
