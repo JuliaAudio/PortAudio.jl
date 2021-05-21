@@ -279,7 +279,7 @@ end
 # end
 #
 # General utility function to handle the status from the Pa_* functions
-function handle_status(err::PaError, show_warnings::Bool=true)
+function handle_status(err::Integer, show_warnings::Bool=true)
     if err == PA_OUTPUT_UNDERFLOWED || err == PA_INPUT_OVERFLOWED
         if show_warnings
             msg = @locked ccall((:Pa_GetErrorText, libportaudio),
