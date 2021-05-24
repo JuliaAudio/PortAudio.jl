@@ -1,7 +1,9 @@
 module PortAudio
 
 using alsa_plugins_jll: alsa_plugins_jll
-using libportaudio_jll, SampledSignals
+using libportaudio_jll: libportaudio
+using SampledSignals
+using Suppressor: @capture_err
 
 import Base: eltype, show
 import Base: close, isopen
@@ -13,6 +15,15 @@ import LinearAlgebra: transpose!
 export PortAudioStream
 
 include("libportaudio.jl")
+
+macro stderr_as_debug(expression)
+    quote
+        local result
+        debug_message = @capture_err result = $(esc(expression))
+        @debug debug_message
+        result
+    end
+end
 
 # This size is in frames
 
@@ -94,10 +105,8 @@ mutable struct PortAudioStream{T}
         # finalizer(close, this)
         this.sink = PortAudioSink{T}(outdev.name, this, outchans)
         this.source = PortAudioSource{T}(indev.name, this, inchans)
-        this.stream = suppress_err() do
-            Pa_OpenStream(inparams, outparams, sr, 0, paNoFlag,
+        this.stream = @stderr_as_debug Pa_OpenStream(inparams, outparams, sr, 0, paNoFlag,
                           nothing, nothing)
-        end
 
         Pa_StartStream(this.stream)
         # pre-fill the output stream so we're less likely to underrun
@@ -370,13 +379,6 @@ function discard_input(source::PortAudioSource)
     end
 end
 
-function suppress_err(dofunc::Function)
-    nullfile = @static Sys.iswindows() ? "nul" : "/dev/null"
-    open(nullfile, "w") do io
-        redirect_stderr(dofunc, io)
-    end
-end
-
 function __init__()
     if Sys.islinux()
         envkey = "ALSA_CONFIG_DIR"
@@ -415,9 +417,7 @@ function __init__()
     # junk to STDOUT on initialization, so we swallow it.
     # TODO: actually check the junk to make sure there's nothing in there we
     # don't expect
-    suppress_err() do
-        Pa_Initialize()
-    end
+    @stderr_as_debug Pa_Initialize()
 
     atexit() do
         Pa_Terminate()

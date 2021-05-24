@@ -1,9 +1,17 @@
 #!/usr/bin/env julia
 
+using Logging: Debug
 using PortAudio
-using PortAudio: Pa_GetDefaultInputDevice, Pa_GetDefaultOutputDevice, Pa_GetDeviceInfo, Pa_GetHostApiInfo, PortAudioDevice
+using PortAudio: Pa_GetDefaultInputDevice, Pa_GetDefaultOutputDevice, Pa_GetDeviceInfo, Pa_GetHostApiInfo, PortAudioDevice, @stderr_as_debug
 using Test
 using SampledSignals
+
+@testset "Debug messages" begin
+    @test_logs (:debug, "hi") min_level = Debug @test_nowarn @stderr_as_debug begin
+        print(stderr, "hi")
+        true
+    end
+end
 
 @testset "PortAudio Tests" begin
     @testset "Reports version" begin
