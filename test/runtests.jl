@@ -76,6 +76,7 @@ if !isempty(PortAudio.devices())
             @test sprint(show, sink) == "2-channel PortAudioSink{Float32}($(repr(default_indev)))"
             @test sprint(show, source) == "2-channel PortAudioSource{Float32}($(repr(default_outdev)))"
             write(stream, stream, 5s)
+            recover_xrun(stream)
             @test_throws ErrorException("""
                 Attempted to close PortAudioSink or PortAudioSource.
                 Close the containing PortAudioStream instead

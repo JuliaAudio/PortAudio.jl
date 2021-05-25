@@ -213,10 +213,7 @@ end
 
 # if one device is given, use it for input and output, but set inchans=0 so we
 # end up with an output-only stream
-function PortAudioStream(device::PortAudioDevice, inchans=2, outchans=2; kwargs...)
-    PortAudioStream(device, device, inchans, outchans; kwargs...)
-end
-function PortAudioStream(device::AbstractString, inchans=2, outchans=2; kwargs...)
+function PortAudioStream(device::Union{PortAudioDevice, AbstractString}, inchans=2, outchans=2; kwargs...)
     PortAudioStream(device, device, inchans, outchans; kwargs...)
 end
 
