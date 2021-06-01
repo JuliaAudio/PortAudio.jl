@@ -1,9 +1,11 @@
 using PortAudio
 
-"""Continuously read from the default audio input and plot an
-ASCII level/peak meter"""
+"""
+Continuously read from the default audio input and plot an
+ASCII level/peak meter
+"""
 function micmeter(metersize)
-    mic = PortAudioStream(1, 0; latency=0.1)
+    mic = PortAudioStream(1, 0; latency = 0.1)
 
     signalmax = zero(eltype(mic))
     println("Press Ctrl-C to quit")
@@ -16,28 +18,32 @@ function micmeter(metersize)
     end
 end
 
-"""Print an ASCII level meter of the given size. Signal and peak
-levels are assumed to be scaled from 0.0-1.0, with peak >= signal"""
+"""
+Print an ASCII level meter of the given size. Signal and peak
+levels are assumed to be scaled from 0.0-1.0, with peak >= signal
+"""
 function printmeter(metersize, signal, peak)
     # calculate the positions in terms of characters
     peakpos = clamp(round(Int, peak * metersize), 0, metersize)
-    meterchars = clamp(round(Int, signal * metersize), 0, peakpos-1)
-    blankchars = max(0, peakpos-meterchars-1)
+    meterchars = clamp(round(Int, signal * metersize), 0, peakpos - 1)
+    blankchars = max(0, peakpos - meterchars - 1)
 
     for position in 1:meterchars
-        printstyled(">", color=barcolor(metersize, position))
+        printstyled(">", color = barcolor(metersize, position))
     end
 
-    print(" " ^ blankchars)
-    printstyled("|", color=barcolor(metersize, peakpos))
-    print(" " ^ (metersize - peakpos))
+    print(" "^blankchars)
+    printstyled("|", color = barcolor(metersize, peakpos))
+    print(" "^(metersize - peakpos))
 end
 
-"""Compute the proper color for a given position in the bar graph. The first
+"""
+Compute the proper color for a given position in the bar graph. The first
 half of the bar should be green, then the remainder is yellow except the final
-character, which is red."""
+character, which is red.
+"""
 function barcolor(metersize, position)
-    if position/metersize <= 0.5
+    if position / metersize <= 0.5
         :green
     elseif position == metersize
         :red
