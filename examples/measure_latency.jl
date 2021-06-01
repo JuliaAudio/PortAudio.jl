@@ -4,15 +4,14 @@ using DSP
 function create_measure_signal()
     signal = zeros(Float32, 20000)
     for i in 1:3
-        signal = vcat(signal, rand(Float32, 100), zeros(Float32, i*10000))
+        signal = vcat(signal, rand(Float32, 100), zeros(Float32, i * 10000))
     end
     return signal
 end
 
-function measure_latency(in_latency = 0.1, out_latency=0.1; is_warmup = false)
-
-    in_stream = PortAudioStream(1,0; latency=in_latency)
-    out_stream = PortAudioStream(0,1; latency=out_latency)
+function measure_latency(in_latency = 0.1, out_latency = 0.1; is_warmup = false)
+    in_stream = PortAudioStream(1, 0; latency = in_latency)
+    out_stream = PortAudioStream(0, 1; latency = out_latency)
 
     cond = Base.Event()
 
@@ -27,9 +26,9 @@ function measure_latency(in_latency = 0.1, out_latency=0.1; is_warmup = false)
 
     signal = create_measure_signal()
     writer = Threads.@spawn begin
-            wait(cond)
-            reader_start_time = time_ns() |> Int64
-            write(out_stream, signal)
+        wait(cond)
+        reader_start_time = time_ns() |> Int64
+        write(out_stream, signal)
     end
 
     notify(cond)
@@ -37,8 +36,8 @@ function measure_latency(in_latency = 0.1, out_latency=0.1; is_warmup = false)
     wait(reader)
     wait(writer)
 
-    recorded = collect(reader.result)[:,1]
-    
+    recorded = collect(reader.result)[:, 1]
+
     close(in_stream)
     close(out_stream)
 

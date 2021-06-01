@@ -38,24 +38,28 @@ end
     end
     @testset "Samplerate-converting writing" begin
         stream = PortAudioStream(0, 2)
-        write(stream, SinSource(eltype(stream), samplerate(stream)*0.8, [220, 330]), 3s)
-        write(stream, SinSource(eltype(stream), samplerate(stream)*1.2, [220, 330]), 3s)
+        write(stream, SinSource(eltype(stream), samplerate(stream) * 0.8, [220, 330]), 3s)
+        write(stream, SinSource(eltype(stream), samplerate(stream) * 1.2, [220, 330]), 3s)
         flush(stream)
         close(stream)
     end
     @testset "Open Device by name" begin
         stream = PortAudioStream(default_indev, default_outdev)
         buf = read(stream, 0.001s)
-        @test size(buf) == (round(Int, 0.001 * samplerate(stream)), nchannels(stream.source))
+        @test size(buf) ==
+              (round(Int, 0.001 * samplerate(stream)), nchannels(stream.source))
         write(stream, buf)
         io = IOBuffer()
         show(io, stream)
-        @test occursin("""
-        PortAudioStream{Float32}
-          Samplerate: 44100.0Hz
-          Buffer Size: 4096 frames
-          2 channel sink: "$default_outdev"
-          2 channel source: "$default_indev\"""", String(take!(io)))
+        @test occursin(
+            """
+PortAudioStream{Float32}
+  Samplerate: 44100.0Hz
+  Buffer Size: 4096 frames
+  2 channel sink: "$default_outdev"
+  2 channel source: "$default_indev\"""",
+            String(take!(io)),
+        )
         close(stream)
     end
     @testset "Error on wrong name" begin
@@ -65,7 +69,10 @@ end
     # but at least it's not crashing.
     @testset "Queued Writing" begin
         stream = PortAudioStream(0, 2)
-        buf = SampleBuf(rand(eltype(stream), 48000, nchannels(stream.sink))*0.1, samplerate(stream))
+        buf = SampleBuf(
+            rand(eltype(stream), 48000, nchannels(stream.sink)) * 0.1,
+            samplerate(stream),
+        )
         t1 = @async write(stream, buf)
         t2 = @async write(stream, buf)
         @test fetch(t1) == 48000
@@ -75,7 +82,10 @@ end
     end
     @testset "Queued Reading" begin
         stream = PortAudioStream(2, 0)
-        buf = SampleBuf(rand(eltype(stream), 48000, nchannels(stream.source))*0.1, samplerate(stream))
+        buf = SampleBuf(
+            rand(eltype(stream), 48000, nchannels(stream.source)) * 0.1,
+            samplerate(stream),
+        )
         t1 = @async read!(stream, buf)
         t2 = @async read!(stream, buf)
         @test fetch(t1) == 48000
