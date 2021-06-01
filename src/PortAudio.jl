@@ -135,6 +135,21 @@ end
 
 defaultlatency(devices...) = maximum(d -> max(d.highoutputlatency, d.highinputlatency), devices)
 
+function combine_default_sample_rates(inchans, sampleratein, outchans, samplerateout)
+    if inchans > 0 && outchans > 0 && sampleratein != samplerateout
+        error("""
+            Can't open duplex stream with mismatched samplerates (in: $sampleratein, out: $samplerateout).
+            Try changing your sample rate in your driver settings or open separate input and output
+            streams.
+            """
+        )
+    elseif inchans > 0
+        sampleratein
+    else
+        samplerateout
+    end
+end
+
 # this is the top-level outer constructor that all the other outer constructors end up calling
 """
     PortAudioStream(inchannels=2, outchannels=2; options...)
@@ -165,18 +180,10 @@ function PortAudioStream(indev::PortAudioDevice, outdev::PortAudioDevice,
         inchans=2, outchans=2; eltype=Float32, samplerate=-1,
         latency=defaultlatency(indev, outdev), warn_xruns=false, recover_xruns=true)
     if samplerate == -1
-        sampleratein = indev.defaultsamplerate
-        samplerateout = outdev.defaultsamplerate
-        if inchans > 0 && outchans > 0 && sampleratein != samplerateout
-            error("""
-            Can't open duplex stream with mismatched samplerates (in: $sampleratein, out: $samplerateout).
-                   Try changing your sample rate in your driver settings or open separate input and output
-                   streams""")
-        elseif inchans > 0
-            samplerate = sampleratein
-        else
-            samplerate = samplerateout
-        end
+        samplerate = combine_default_sample_rates(
+            inchans, indev.defaultsamplerate, 
+            outchans, outdev.defaultsamplerate
+        )        
     end
     PortAudioStream{eltype}(indev, outdev, inchans, outchans, samplerate,
                             latency, warn_xruns, recover_xruns)
@@ -206,10 +213,7 @@ end
 
 # if one device is given, use it for input and output, but set inchans=0 so we
 # end up with an output-only stream
-function PortAudioStream(device::PortAudioDevice, inchans=2, outchans=2; kwargs...)
-    PortAudioStream(device, device, inchans, outchans; kwargs...)
-end
-function PortAudioStream(device::AbstractString, inchans=2, outchans=2; kwargs...)
+function PortAudioStream(device::Union{PortAudioDevice, AbstractString}, inchans=2, outchans=2; kwargs...)
     PortAudioStream(device, device, inchans, outchans; kwargs...)
 end
 
@@ -289,8 +293,11 @@ SampledSignals.nchannels(s::Union{PortAudioSink, PortAudioSource}) = s.nchannels
 SampledSignals.samplerate(s::Union{PortAudioSink, PortAudioSource}) = samplerate(s.stream)
 eltype(::Union{PortAudioSink{T}, PortAudioSource{T}}) where {T} = T
 function close(s::Union{PortAudioSink, PortAudioSource})
-    throw(ErrorException("Attempted to close PortAudioSink or PortAudioSource.
-                          Close the containing PortAudioStream instead"))
+    throw(ErrorException("""
+        Attempted to close PortAudioSink or PortAudioSource.
+        Close the containing PortAudioStream instead
+        """
+    ))
 end
 isopen(s::Union{PortAudioSink, PortAudioSource}) = isopen(s.stream)
 name(s::Union{PortAudioSink, PortAudioSource}) = s.name
@@ -379,33 +386,38 @@ function discard_input(source::PortAudioSource)
     end
 end
 
+function seek_alsa_conf(searchdirs)
+    confdir_idx = findfirst(searchdirs) do d
+        isfile(joinpath(d, "alsa.conf"))
+    end
+    if confdir_idx === nothing
+        throw(ErrorException(
+            """
+            Could not find ALSA config directory. Searched:
+            $(join(searchdirs, "\n"))
+
+            If ALSA is installed, set the "ALSA_CONFIG_DIR" environment
+            variable. The given directory should have a file "alsa.conf".
+
+            If it would be useful to others, please file an issue at
+            https://github.com/JuliaAudio/PortAudio.jl/issues
+            with your alsa config directory so we can add it to the search
+            paths.
+            """
+        ))
+    end
+    searchdirs[confdir_idx]
+end
+
 function __init__()
     if Sys.islinux()
         envkey = "ALSA_CONFIG_DIR"
         if envkey ∉ keys(ENV)
-            searchdirs = ["/usr/share/alsa",
-                          "/usr/local/share/alsa",
-                          "/etc/alsa"]
-            confdir_idx = findfirst(searchdirs) do d
-                isfile(joinpath(d, "alsa.conf"))
-            end
-            if confdir_idx === nothing
-                throw(ErrorException(
-                    """
-                    Could not find ALSA config directory. Searched:
-                    $(join(searchdirs, "\n"))
-
-                    if ALSA is installed, set the "ALSA_CONFIG_DIR" environment
-                    variable. The given directory should have a file "alsa.conf".
-
-                    If it would be useful to others, please file an issue at
-                    https://github.com/JuliaAudio/PortAudio.jl/issues
-                    with your alsa config directory so we can add it to the search
-                    paths.
-                    """))
-            end
-            confdir = searchdirs[confdir_idx]
-            ENV[envkey] = confdir
+            ENV[envkey] = seek_alsa_conf([
+                "/usr/share/alsa",
+                "/usr/local/share/alsa",
+                "/etc/alsa"
+            ])
         end
 
         plugin_key = "ALSA_PLUGIN_DIR"
