@@ -122,7 +122,7 @@ struct PortAudioStream{T}
             Ref(Pa_StreamParameters(outdev.idx, outchans, type_to_fmt[T], latency, C_NULL))
         end
         # finalizer(close, this)
-        pointer = @stderr_as_debug Pa_OpenStream(
+        pointer_ref = @stderr_as_debug Pa_OpenStream(
             inparams,
             outparams,
             sr,
@@ -133,11 +133,11 @@ struct PortAudioStream{T}
         )
         sink_buffer = Buffer{T}(outdev, outchans)
         source_buffer = Buffer{T}(indev, inchans)
-        Pa_StartStream(pointer)
+        Pa_StartStream(pointer_ref[])
         this = new(
             sr, 
             latency, 
-            Ref(pointer), 
+            pointer_ref, 
             warn_xruns,
             recover_xruns,
             sink_buffer,
