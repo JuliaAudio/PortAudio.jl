@@ -303,7 +303,6 @@ function PortAudioStream(fn::Function, args...; kwargs...)
 end
 
 function close(stream::PortAudioStream)
-    pointer = stream.pointer_ref[]
     if stream.pointer_ref[] != C_NULL
         Pa_StopStream(stream.pointer_ref[])
         Pa_CloseStream(stream.pointer_ref[])
