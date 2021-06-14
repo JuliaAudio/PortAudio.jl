@@ -72,10 +72,8 @@ if !isempty(PortAudio.devices())
             stream = PortAudioStream(2, 2)
             sink = stream.sink
             source = stream.source
-            @test sprint(show, sink) ==
-                  "2 channel sink: $(repr(default_indev))"
-            @test sprint(show, source) ==
-                  "2 channel source: $(repr(default_outdev))"
+            @test sprint(show, sink) == "2 channel sink: $(repr(default_indev))"
+            @test sprint(show, source) == "2 channel source: $(repr(default_outdev))"
             write(stream, stream, 5s)
             recover_xrun(stream)
             @test_throws ErrorException("""
