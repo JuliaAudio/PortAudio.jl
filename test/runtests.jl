@@ -72,12 +72,10 @@ if !isempty(PortAudio.devices())
             stream = PortAudioStream(2, 2)
             sink = stream.sink
             source = stream.source
-            @test sprint(show, typeof(sink)) == "PortAudioSink{Float32}"
-            @test sprint(show, typeof(source)) == "PortAudioSource{Float32}"
             @test sprint(show, sink) ==
-                  "2-channel PortAudioSink{Float32}($(repr(default_indev)))"
+                  "2 channel sink: $(repr(default_indev))"
             @test sprint(show, source) ==
-                  "2-channel PortAudioSource{Float32}($(repr(default_outdev)))"
+                  "2 channel source: $(repr(default_outdev))"
             write(stream, stream, 5s)
             recover_xrun(stream)
             @test_throws ErrorException("""
@@ -120,9 +118,8 @@ if !isempty(PortAudio.devices())
                 """
  PortAudioStream{Float32}
    Samplerate: 44100.0Hz
-
-   2 channel sink: "$default_outdev"
-   2 channel source: "$default_indev\"""",
+   2 channel sink: $(repr(default_outdev))
+   2 channel source: $(repr(default_indev))""",
                 String(take!(io)),
             )
             close(stream)

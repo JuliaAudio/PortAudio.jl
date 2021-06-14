@@ -320,10 +320,16 @@ end
 function show(io::IO, stream::PortAudioStream)
     println(io, typeof(stream))
     print(io, "  Samplerate: ", samplerate(stream), "Hz")
-    print(io, "\n  ")
-    show(io, stream.sink)
-    print(io, "\n  ")
-    show(io, stream.source)
+    sink = stream.sink
+    if nchannels(sink) > 0
+        print(io, "\n  ")
+        show(io, sink)
+    end
+    source = stream.source
+    if nchannels(source) > 0
+        print(io, "\n  ")
+        show(io, source)
+    end
 end
 
 #
