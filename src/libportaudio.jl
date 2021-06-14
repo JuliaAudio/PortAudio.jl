@@ -236,7 +236,7 @@ function Pa_OpenStream(
         userdata === nothing ? C_NULL : pointer_from_objref(userdata),
     )
     handle_status(err)
-    streamPtr[]
+    streamPtr
 end
 
 function Pa_StartStream(stream::PaStream)
