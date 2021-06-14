@@ -9,8 +9,7 @@ import Base: eltype, getproperty, show
 import Base: close, isopen
 import Base: read, read!, write
 
-using LinearAlgebra: LinearAlgebra
-import LinearAlgebra: transpose!
+using LinearAlgebra: transpose!
 
 export PortAudioStream
 
@@ -36,42 +35,45 @@ function versioninfo(io::IO = stdout)
     println(io, "Version: ", Pa_GetVersion())
 end
 
+struct Bounds
+    max_channels::Int
+    low_latency::Float64
+    high_latency::Float64
+end
+
 struct PortAudioDevice
     name::String
     hostapi::String
-    maxinchans::Int
-    maxoutchans::Int
     defaultsamplerate::Float64
     idx::PaDeviceIndex
-    lowinputlatency::Float64
-    lowoutputlatency::Float64
-    highinputlatency::Float64
-    highoutputlatency::Float64
+    input_bounds::Bounds
+    output_bounds::Bounds
 end
 
 function PortAudioDevice(info::PaDeviceInfo, idx)
     PortAudioDevice(
         unsafe_string(info.name),
         unsafe_string(Pa_GetHostApiInfo(info.host_api).name),
-        info.max_input_channels,
-        info.max_output_channels,
         info.default_sample_rate,
         idx,
-        info.default_low_input_latency,
-        info.default_low_output_latency,
-        info.default_high_input_latency,
-        info.default_high_output_latency,
+        Bounds(
+            info.max_input_channels,
+            info.default_low_input_latency,
+            info.default_high_input_latency,
+        ),
+        Bounds(
+            info.max_output_channels,
+            info.default_low_output_latency,
+            info.default_high_output_latency,
+        ),
     )
 end
 
-function devices()
-    ndevices = Pa_GetDeviceCount()
-    infos = PaDeviceInfo[Pa_GetDeviceInfo(i) for i in 0:(ndevices - 1)]
-    PortAudioDevice[PortAudioDevice(info, idx - 1) for (idx, info) in enumerate(infos)]
-end
+name(device::PortAudioDevice) = device.name
 
-# not for external use, used in error message printing
-devnames() = join(["\"$(dev.name)\"" for dev in devices()], "\n")
+function devices()
+    [PortAudioDevice(Pa_GetDeviceInfo(i), i) for i in 0:(Pa_GetDeviceCount() - 1)]
+end
 
 struct Buffer{T}
     device::PortAudioDevice
@@ -91,69 +93,36 @@ struct PortAudioStream{T}
     recover_xruns::Bool
     sink_buffer::Buffer{T}
     source_buffer::Buffer{T}
+end
 
-    # this inner constructor is generally called via the top-level outer
-    # constructor below
-
-    # TODO: pre-fill outbut buffer on init
-    # TODO: recover from xruns - currently with low latencies (e.g. 0.01) it
-    # will run fine for a while and then fail with the first xrun.
-    # TODO: figure out whether we can get deterministic latency...
-    function PortAudioStream{T}(
-        indev::PortAudioDevice,
-        outdev::PortAudioDevice,
-        inchans,
-        outchans,
-        sr,
-        latency,
-        warn_xruns,
-        recover_xruns,
-    ) where {T}
-        inchans = inchans == -1 ? indev.maxinchans : inchans
-        outchans = outchans == -1 ? outdev.maxoutchans : outchans
-        inparams = if (inchans == 0)
-            Ptr{Pa_StreamParameters}(0)
-        else
-            Ref(Pa_StreamParameters(indev.idx, inchans, type_to_fmt[T], latency, C_NULL))
-        end
-        outparams = if (outchans == 0)
-            Ptr{Pa_StreamParameters}(0)
-        else
-            Ref(Pa_StreamParameters(outdev.idx, outchans, type_to_fmt[T], latency, C_NULL))
-        end
-        # finalizer(close, this)
-        pointer_ref = @stderr_as_debug Pa_OpenStream(
-            inparams,
-            outparams,
-            sr,
-            0,
-            paNoFlag,
-            nothing,
-            nothing,
+function make_parameters(device, channels, T, latency, host_api_specific_stream_info)
+    if channels == 0
+        Ptr{Pa_StreamParameters}(0)
+    else
+        Ref(
+            Pa_StreamParameters(
+                device.idx,
+                channels,
+                type_to_fmt[T],
+                latency,
+                convert_nothing(host_api_specific_stream_info),
+            ),
         )
-        sink_buffer = Buffer{T}(outdev, outchans)
-        source_buffer = Buffer{T}(indev, inchans)
-        Pa_StartStream(pointer_ref[])
-        this = new(
-            sr, 
-            latency, 
-            pointer_ref, 
-            warn_xruns,
-            recover_xruns,
-            sink_buffer,
-            source_buffer
-        )
-        # pre-fill the output stream so we're less likely to underrun
-        prefill_output(this.sink)
+    end
+end
 
-        this
+function fill_max_channels(channels, bounds)
+    if channels === max
+        bounds.max_channels
+    else
+        channels
     end
 end
 
 function recover_xrun(stream::PortAudioStream)
-    playback = nchannels(stream.sink) > 0
-    capture = nchannels(stream.source) > 0
-    if playback && capture
+    sink = stream.sink
+    source = stream.source
+    if nchannels(sink) > 0 && nchannels(source) > 0
         # the best we can do to avoid further xruns is to fill the playback buffer and
         # discard the capture buffer. Really there's a fundamental problem with our
         # read/write-based API where you don't know whether we're currently in a state
@@ -161,13 +130,13 @@ function recover_xrun(stream::PortAudioStream)
         # move to some kind of transaction API that forces them to be balanced, and also
         # gives a way for the application to signal that the same number of samples
         # should have been read as written.
-        discard_input(stream.source)
-        prefill_output(stream.sink)
+        discard_input(source)
+        prefill_output(sink)
     end
 end
 
-function defaultlatency(devices...)
-    maximum(d -> max(d.highoutputlatency, d.highinputlatency), devices)
+function defaultlatency(input_device, output_device)
+    max(input_device.input_bounds.high_latency, output_device.output_bounds.high_latency)
 end
 
 function combine_default_sample_rates(inchans, sampleratein, outchans, samplerateout)
@@ -218,29 +187,62 @@ function PortAudioStream(
     inchans = 2,
     outchans = 2;
     eltype = Float32,
-    samplerate = -1,
+    samplerate = combine_default_sample_rates(
+        inchans,
+        indev.defaultsamplerate,
+        outchans,
+        outdev.defaultsamplerate,
+    ),
     latency = defaultlatency(indev, outdev),
     warn_xruns = false,
     recover_xruns = true,
+    frames_per_buffer = 0,
+    flags = paNoFlag,
+    callback = nothing,
+    user_data = nothing,
+    input_info = nothing,
+    output_info = nothing,
 )
-    if samplerate == -1
-        samplerate = combine_default_sample_rates(
-            inchans,
-            indev.defaultsamplerate,
-            outchans,
-            outdev.defaultsamplerate,
-        )
-    end
-    PortAudioStream{eltype}(
-        indev,
-        outdev,
-        inchans,
-        outchans,
+    inchans = fill_max_channels(inchans, indev.input_bounds)
+    outchans = fill_max_channels(outchans, outdev.output_bounds)
+    pointer_ref = @stderr_as_debug Pa_OpenStream(
+        make_parameters(indev, inchans, eltype, latency, input_info),
+        make_parameters(outdev, outchans, eltype, latency, output_info),
+        samplerate,
+        frames_per_buffer,
+        flags,
+        callback,
+        user_data,
+    )
+    Pa_StartStream(pointer_ref[])
+    this = PortAudioStream{eltype}(
         samplerate,
         latency,
+        pointer_ref,
         warn_xruns,
         recover_xruns,
+        Buffer{eltype}(outdev, outchans),
+        Buffer{eltype}(indev, inchans),
     )
+    # pre-fill the output stream so we're less likely to underrun
+    prefill_output(this.sink)
+    this
+end
+
+function device_by_name(device_name)
+    error_message = IOBuffer()
+    write(error_message, "No device matching ")
+    write(error_message, repr(device_name))
+    write(error_message, " found.\nAvailable Devices:\n")
+    for device in devices()
+        potential_match = name(device)
+        if potential_match == device_name
+            return device
+        end
+        write(error_message, repr(potential_match))
+        write(error_message, '\n')
+    end
+    error(String(take!(error_message)))
 end
 
 # handle device names given as streams
@@ -250,33 +252,19 @@ function PortAudioStream(
     args...;
     kwargs...,
 )
-    indev = nothing
-    outdev = nothing
-    for d in devices()
-        if d.name == indevname
-            indev = d
-        end
-        if d.name == outdevname
-            outdev = d
-        end
-    end
-    if indev == nothing
-        error("No device matching \"$indevname\" found.\nAvailable Devices:\n$(devnames())")
-    end
-    if outdev == nothing
-        error(
-            "No device matching \"$outdevname\" found.\nAvailable Devices:\n$(devnames())",
-        )
-    end
-
-    PortAudioStream(indev, outdev, args...; kwargs...)
+    PortAudioStream(
+        device_by_name(indevname),
+        device_by_name(outdevname),
+        args...;
+        kwargs...,
+    )
 end
 
 # if one device is given, use it for input and output, but set inchans=0 so we
 # end up with an output-only stream
 function PortAudioStream(
     device::Union{PortAudioDevice, AbstractString},
-    inchans = 2,
+    inchans = 0,
     outchans = 2;
     kwargs...,
 )
@@ -286,10 +274,14 @@ end
 # use the default input and output devices
 function PortAudioStream(inchans = 2, outchans = 2; kwargs...)
     inidx = Pa_GetDefaultInputDevice()
-    indevice = PortAudioDevice(Pa_GetDeviceInfo(inidx), inidx)
     outidx = Pa_GetDefaultOutputDevice()
-    outdevice = PortAudioDevice(Pa_GetDeviceInfo(outidx), outidx)
-    PortAudioStream(indevice, outdevice, inchans, outchans; kwargs...)
+    PortAudioStream(
+        PortAudioDevice(Pa_GetDeviceInfo(inidx), inidx),
+        PortAudioDevice(Pa_GetDeviceInfo(outidx), outidx),
+        inchans,
+        outchans;
+        kwargs...,
+    )
 end
 
 # handle do-syntax
@@ -303,10 +295,12 @@ function PortAudioStream(fn::Function, args...; kwargs...)
 end
 
 function close(stream::PortAudioStream)
-    if stream.pointer_ref[] != C_NULL
-        Pa_StopStream(stream.pointer_ref[])
-        Pa_CloseStream(stream.pointer_ref[])
-        stream.pointer_ref[] = C_NULL
+    pointer_ref = stream.pointer_ref
+    pointer = pointer_ref[]
+    if pointer != C_NULL
+        Pa_StopStream(pointer)
+        Pa_CloseStream(pointer)
+        pointer_ref[] = C_NULL
     end
     nothing
 end
@@ -314,7 +308,7 @@ end
 isopen(stream::PortAudioStream) = stream.pointer_ref[] != C_NULL
 
 SampledSignals.samplerate(stream::PortAudioStream) = stream.samplerate
-eltype(stream::PortAudioStream{T}) where {T} = T
+eltype(::Type{PortAudioStream{T}}) where {T} = T
 
 read(stream::PortAudioStream, args...) = read(stream.source, args...)
 read!(stream::PortAudioStream, args...) = read!(stream.source, args...)
@@ -325,27 +319,11 @@ end
 
 function show(io::IO, stream::PortAudioStream)
     println(io, typeof(stream))
-    println(io, "  Samplerate: ", samplerate(stream), "Hz")
-    if nchannels(stream.sink) > 0
-        print(
-            io,
-            "\n  ",
-            nchannels(stream.sink),
-            " channel sink: \"",
-            name(stream.sink),
-            "\"",
-        )
-    end
-    if nchannels(stream.source) > 0
-        print(
-            io,
-            "\n  ",
-            nchannels(stream.source),
-            " channel source: \"",
-            name(stream.source),
-            "\"",
-        )
-    end
+    print(io, "  Samplerate: ", samplerate(stream), "Hz")
+    print(io, "\n  ")
+    show(io, stream.sink)
+    print(io, "\n  ")
+    show(io, stream.source)
 end
 
 #
@@ -361,7 +339,7 @@ end
 
 # provided for backwards compatibility
 function getproperty(stream::PortAudioStream, property::Symbol)
-    if property === :sink 
+    if property === :sink
         PortAudioSink(stream)
     elseif property === :source
         PortAudioSource(stream)
@@ -370,37 +348,58 @@ function getproperty(stream::PortAudioStream, property::Symbol)
     end
 end
 
-function Buffer{T}(device, channels) where T
+function Buffer{T}(device, channels) where {T}
     # portaudio data comes in interleaved, so we'll end up transposing
     # it back and forth to julia column-major
     chunkbuf = zeros(T, channels, CHUNKFRAMES)
     Buffer(device, chunkbuf, channels)
 end
 
-SampledSignals.nchannels(s::PortAudioSource) = s.stream.source_buffer.nchannels
-SampledSignals.nchannels(s::PortAudioSink) = s.stream.sink_buffer.nchannels
+SampledSignals.nchannels(buffer::Buffer) = buffer.nchannels
+name(buffer::Buffer) = name(buffer.device)
+
+SampledSignals.nchannels(s::PortAudioSource) = nchannels(s.stream.source_buffer)
+SampledSignals.nchannels(s::PortAudioSink) = nchannels(s.stream.sink_buffer)
 SampledSignals.samplerate(s::Union{PortAudioSink, PortAudioSource}) = samplerate(s.stream)
-eltype(::Union{PortAudioSink{T}, PortAudioSource{T}}) where {T} = T
-function close(s::Union{PortAudioSink, PortAudioSource})
+eltype(::Type{<:Union{PortAudioSink{T}, PortAudioSource{T}}}) where {T} = T
+function close(::Union{PortAudioSink, PortAudioSource})
     throw(ErrorException("""
         Attempted to close PortAudioSink or PortAudioSource.
         Close the containing PortAudioStream instead
         """))
 end
 isopen(s::Union{PortAudioSink, PortAudioSource}) = isopen(s.stream)
-name(s::PortAudioSink) = s.stream.sink_buffer.device.name
-name(s::PortAudioSource) = s.stream.source_buffer.device.name
+name(s::PortAudioSink) = name(s.stream.sink_buffer)
+name(s::PortAudioSource) = name(s.stream.source_buffer)
 
-function show(io::IO, ::Type{PortAudioSink{T}}) where {T}
-    print(io, "PortAudioSink{$T}")
+kind(::PortAudioSink) = "sink"
+kind(::PortAudioSource) = "source"
+function show(io::IO, sink_or_source::Union{PortAudioSink, PortAudioSource})
+    print(
+        io,
+        nchannels(sink_or_source),
+        " channel ",
+        kind(sink_or_source),
+        ": ",
+        repr(name(sink_or_source)),
+    )
 end
 
-function show(io::IO, ::Type{PortAudioSource{T}}) where {T}
-    print(io, "PortAudioSource{$T}")
+function interleave!(long, wide, n, already, offset, wide_to_long)
+    long_view = view(long, (1:n) .+ already .+ offset, :)
+    wide_view = view(wide, :, 1:n)
+    if wide_to_long
+        transpose!(long_view, wide_view)
+    else
+        transpose!(wide_view, long_view)
+    end
 end
 
-function show(io::IO, stream::T) where {T <: Union{PortAudioSink, PortAudioSource}}
-    print(io, nchannels(stream), "-channel ", T, "(\"", name(stream), "\")")
+function handle_xrun(stream, error_code, recover_xruns)
+    if recover_xruns &&
+       (error_code == PA_OUTPUT_UNDERFLOWED || error_code == PA_INPUT_OVERFLOWED)
+        recover_xrun(stream)
+    end
 end
 
 function SampledSignals.unsafe_write(
@@ -409,21 +408,23 @@ function SampledSignals.unsafe_write(
     frameoffset,
     framecount,
 )
+    stream = sink.stream
+    pointer = stream.pointer_ref[]
+    chunkbuf = stream.sink_buffer.chunkbuf
+    warn_xruns = stream.warn_xruns
+    recover_xruns = stream.recover_xruns
     nwritten = 0
-    sink_buffer = sink.stream.sink_buffer
     while nwritten < framecount
         n = min(framecount - nwritten, CHUNKFRAMES)
         # make a buffer of interleaved samples
-        transpose!(
-            view(sink_buffer.chunkbuf, :, 1:n),
-            view(buf, (1:n) .+ nwritten .+ frameoffset, :),
-        )
+        interleave!(buf, chunkbuf, n, nwritten, frameoffset, false)
         # TODO: if the stream is closed we just want to return a
         # shorter-than-requested frame count instead of throwing an error
-        err = Pa_WriteStream(sink.stream.pointer_ref[], sink_buffer.chunkbuf, n, sink.stream.warn_xruns)
-        if err ∈ (PA_OUTPUT_UNDERFLOWED, PA_INPUT_OVERFLOWED) && sink.stream.recover_xruns
-            recover_xrun(sink.stream)
-        end
+        handle_xrun(
+            stream,
+            Pa_WriteStream(pointer, chunkbuf, n, warn_xruns = warn_xruns),
+            recover_xruns,
+        )
         nwritten += n
     end
 
@@ -436,27 +437,23 @@ function SampledSignals.unsafe_read!(
     frameoffset,
     framecount,
 )
-    source_buffer = source.stream.source_buffer
+    stream = source.stream
+    pointer = stream.pointer_ref[]
+    chunkbuf = stream.source_buffer.chunkbuf
+    warn_xruns = stream.warn_xruns
+    recover_xruns = stream.recover_xruns
     nread = 0
     while nread < framecount
         n = min(framecount - nread, CHUNKFRAMES)
         # TODO: if the stream is closed we just want to return a
         # shorter-than-requested frame count instead of throwing an error
-        err = Pa_ReadStream(
-            source.stream.pointer_ref[],
-            source_buffer.chunkbuf,
-            n,
-            source.stream.warn_xruns,
+        handle_xrun(
+            stream,
+            Pa_ReadStream(pointer, chunkbuf, n, warn_xruns = warn_xruns),
+            recover_xruns,
         )
-        if err ∈ (PA_OUTPUT_UNDERFLOWED, PA_INPUT_OVERFLOWED) && source.stream.recover_xruns
-            recover_xrun(source.stream)
-        end
         # de-interleave the samples
-        transpose!(
-            view(buf, (1:n) .+ nread .+ frameoffset, :),
-            view(source_buffer.chunkbuf, :, 1:n),
-        )
-
+        interleave!(buf, chunkbuf, n, nread, frameoffset, true)
         nread += n
     end
 
@@ -470,12 +467,14 @@ Fill the playback buffer of the given sink.
 """
 function prefill_output(sink::PortAudioSink)
     if nchannels(sink) > 0
-        towrite = Pa_GetStreamWriteAvailable(sink.stream.pointer_ref[])
-        sink_buffer = sink.stream.sink_buffer
+        stream = sink.stream
+        pointer = stream.pointer_ref[]
+        chunkbuf = stream.sink_buffer.chunkbuf
+        towrite = Pa_GetStreamWriteAvailable(pointer)
         while towrite > 0
             n = min(towrite, CHUNKFRAMES)
-            fill!(sink_buffer.chunkbuf, zero(eltype(sink_buffer.chunkbuf)))
-            Pa_WriteStream(sink.stream.pointer_ref[], sink_buffer.chunkbuf, n, false)
+            fill!(chunkbuf, zero(eltype(chunkbuf)))
+            Pa_WriteStream(pointer, chunkbuf, n, warn_xruns = false)
             towrite -= n
         end
     end
@@ -487,11 +486,13 @@ end
 Read and discard data from the capture buffer.
 """
 function discard_input(source::PortAudioSource)
-    toread = Pa_GetStreamReadAvailable(source.stream.pointer_ref[])
-    source_buffer = source.stream.source_buffer
+    stream = source.stream
+    pointer = stream.pointer_ref[]
+    chunkbuf = stream.source_buffer.chunkbuf
+    toread = Pa_GetStreamReadAvailable(pointer)
     while toread > 0
         n = min(toread, CHUNKFRAMES)
-        Pa_ReadStream(source.stream.pointer_ref[], source_buffer.chunkbuf, n, false)
+        Pa_ReadStream(pointer, chunkbuf, n, warn_xruns = false)
         toread -= n
     end
 end

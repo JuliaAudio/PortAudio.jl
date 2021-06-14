@@ -43,6 +43,13 @@ const paContinue = PaStreamCallbackResult(0)
 const paComplete = PaStreamCallbackResult(1)
 const paAbort = PaStreamCallbackResult(2)
 
+function safe_load(result, an_error)
+    if result == C_NULL
+        throw(an_error)
+    end
+    unsafe_load(result)
+end
+
 """
 Call the given expression in a separate thread, waiting on the result. This is
 useful when running code that would otherwise block the Julia process (like a
@@ -65,20 +72,19 @@ macro locked(ex)
 end
 
 function Pa_Initialize()
-    err = @locked ccall((:Pa_Initialize, libportaudio), PaError, ())
-    handle_status(err)
+    handle_status(@locked ccall((:Pa_Initialize, libportaudio), PaError, ()))
+    nothing
 end
 
 function Pa_Terminate()
-    err = @locked ccall((:Pa_Terminate, libportaudio), PaError, ())
-    handle_status(err)
+    handle_status(@locked ccall((:Pa_Terminate, libportaudio), PaError, ()))
+    nothing
 end
 
 Pa_GetVersion() = @locked ccall((:Pa_GetVersion, libportaudio), Cint, ())
 
 function Pa_GetVersionText()
-    versionPtr = @locked ccall((:Pa_GetVersionText, libportaudio), Ptr{Cchar}, ())
-    unsafe_string(versionPtr)
+    unsafe_string(@locked ccall((:Pa_GetVersionText, libportaudio), Ptr{Cchar}, ()))
 end
 
 # Host API Functions
@@ -117,16 +123,15 @@ mutable struct PaHostApiInfo
 end
 
 function Pa_GetHostApiInfo(i)
-    result = @locked ccall(
-        (:Pa_GetHostApiInfo, libportaudio),
-        Ptr{PaHostApiInfo},
-        (PaHostApiIndex,),
-        i,
+    safe_load(
+        (@locked ccall(
+            (:Pa_GetHostApiInfo, libportaudio),
+            Ptr{PaHostApiInfo},
+            (PaHostApiIndex,),
+            i,
+        )),
+        BoundsError(Pa_GetHostApiInfo, i),
     )
-    if result == C_NULL
-        throw(BoundsError(Pa_GetHostApiInfo, i))
-    end
-    unsafe_load(result)
 end
 
 # Device Functions
@@ -144,27 +149,32 @@ mutable struct PaDeviceInfo
     default_sample_rate::Cdouble
 end
 
-Pa_GetDeviceCount() = @locked ccall((:Pa_GetDeviceCount, libportaudio), PaDeviceIndex, ())
+function Pa_GetDeviceCount()
+    handle_status(@locked ccall((:Pa_GetDeviceCount, libportaudio), PaDeviceIndex, ()))
+end
 
 function Pa_GetDeviceInfo(i)
-    result = @locked ccall(
-        (:Pa_GetDeviceInfo, libportaudio),
-        Ptr{PaDeviceInfo},
-        (PaDeviceIndex,),
-        i,
+    safe_load(
+        (@locked ccall(
+            (:Pa_GetDeviceInfo, libportaudio),
+            Ptr{PaDeviceInfo},
+            (PaDeviceIndex,),
+            i,
+        )),
+        BoundsError(Pa_GetDeviceInfo, i),
     )
-    if result == C_NULL
-        throw(BoundsError(Pa_GetDeviceInfo, i))
-    end
-    unsafe_load(result)
 end
 
 function Pa_GetDefaultInputDevice()
-    @locked ccall((:Pa_GetDefaultInputDevice, libportaudio), PaDeviceIndex, ())
+    handle_status(
+        @locked ccall((:Pa_GetDefaultInputDevice, libportaudio), PaDeviceIndex, ())
+    )
 end
 
 function Pa_GetDefaultOutputDevice()
-    @locked ccall((:Pa_GetDefaultOutputDevice, libportaudio), PaDeviceIndex, ())
+    handle_status(
+        @locked ccall((:Pa_GetDefaultOutputDevice, libportaudio), PaDeviceIndex, ())
+    )
 end
 
 # Stream Functions
@@ -184,18 +194,19 @@ mutable struct PaStreamInfo
     sampleRate::Cdouble
 end
 
+convert_nothing(::Nothing) = C_NULL
+convert_nothing(something) = something
+
 # function Pa_OpenDefaultStream(inChannels, outChannels,
 #                               sampleFormat::PaSampleFormat,
 #                               sampleRate, framesPerBuffer)
 #     streamPtr = Ref{PaStream}(0)
-#     err = ccall((:Pa_OpenDefaultStream, libportaudio),
+#     handle_status(ccall((:Pa_OpenDefaultStream, libportaudio),
 #                 PaError, (Ref{PaStream}, Cint, Cint,
 #                           PaSampleFormat, Cdouble, Culong,
 #                           Ref{Cvoid}, Ref{Cvoid}),
 #                 streamPtr, inChannels, outChannels, sampleFormat, sampleRate,
-#                 framesPerBuffer, C_NULL, C_NULL)
-#     handle_status(err)
-#
+#                 framesPerBuffer, C_NULL, C_NULL))
 #     streamPtr[]
 # end
 #
@@ -206,130 +217,135 @@ function Pa_OpenStream(
     framesPerBuffer,
     flags::PaStreamFlags,
     callback,
-    userdata,
-)
+    userdata::UserData,
+) where {UserData}
     streamPtr = Ref{PaStream}(0)
-    err = @locked ccall(
-        (:Pa_OpenStream, libportaudio),
-        PaError,
-        (
-            Ref{PaStream},
-            Ref{Pa_StreamParameters},
-            Ref{Pa_StreamParameters},
-            Cdouble,
-            Culong,
-            PaStreamFlags,
-            Ref{Cvoid},
-            # it seems like we should be able to use Ref{T} here, with
-            # userdata::T above, and avoid the `pointer_from_objref` below.
-            # that's not working on 0.6 though, and it shouldn't really
-            # matter because userdata should be GC-rooted anyways
-            Ptr{Cvoid},
-        ),
-        streamPtr,
-        inParams,
-        outParams,
-        float(sampleRate),
-        framesPerBuffer,
-        flags,
-        callback === nothing ? C_NULL : callback,
-        userdata === nothing ? C_NULL : pointer_from_objref(userdata),
+    handle_status(
+        @locked ccall(
+            (:Pa_OpenStream, libportaudio),
+            PaError,
+            (
+                Ref{PaStream},
+                Ref{Pa_StreamParameters},
+                Ref{Pa_StreamParameters},
+                Cdouble,
+                Culong,
+                PaStreamFlags,
+                Ref{Cvoid},
+                Ref{UserData},
+            ),
+            streamPtr,
+            inParams,
+            outParams,
+            float(sampleRate),
+            framesPerBuffer,
+            flags,
+            convert_nothing(callback),
+            convert_nothing(userdata),
+        )
     )
-    handle_status(err)
     streamPtr
 end
 
 function Pa_StartStream(stream::PaStream)
-    err = @locked ccall((:Pa_StartStream, libportaudio), PaError, (PaStream,), stream)
-    handle_status(err)
+    handle_status(
+        @locked ccall((:Pa_StartStream, libportaudio), PaError, (PaStream,), stream)
+    )
+    nothing
 end
 
 function Pa_StopStream(stream::PaStream)
-    err = @locked ccall((:Pa_StopStream, libportaudio), PaError, (PaStream,), stream)
-    handle_status(err)
+    handle_status(
+        @locked ccall((:Pa_StopStream, libportaudio), PaError, (PaStream,), stream)
+    )
+    nothing
 end
 
 function Pa_CloseStream(stream::PaStream)
-    err = @locked ccall((:Pa_CloseStream, libportaudio), PaError, (PaStream,), stream)
-    handle_status(err)
+    handle_status(
+        @locked ccall((:Pa_CloseStream, libportaudio), PaError, (PaStream,), stream)
+    )
+    nothing
 end
 
 function Pa_GetStreamReadAvailable(stream::PaStream)
-    avail = @locked ccall(
-        (:Pa_GetStreamReadAvailable, libportaudio),
-        Clong,
-        (PaStream,),
-        stream,
+    handle_status(
+        @locked ccall(
+            (:Pa_GetStreamReadAvailable, libportaudio),
+            Clong,
+            (PaStream,),
+            stream,
+        )
     )
-    avail >= 0 || handle_status(avail)
-    avail
 end
 
 function Pa_GetStreamWriteAvailable(stream::PaStream)
-    avail = @locked ccall(
-        (:Pa_GetStreamWriteAvailable, libportaudio),
-        Clong,
-        (PaStream,),
-        stream,
+    handle_status(
+        @locked ccall(
+            (:Pa_GetStreamWriteAvailable, libportaudio),
+            Clong,
+            (PaStream,),
+            stream,
+        )
     )
-    avail >= 0 || handle_status(avail)
-    avail
 end
 
-function Pa_ReadStream(stream::PaStream, buf::Array, frames::Integer, show_warnings = true)
+function Pa_ReadStream(stream::PaStream, buf::Array, frames::Integer; warn_xruns = true)
     # without disable_sigint I get a segfault with the error:
     # "error thrown and no exception handler available."
     # if the user tries to ctrl-C. Note I've still had some crash problems with
     # ctrl-C within `pasuspend`, so for now I think either don't use `pasuspend` or
     # don't use ctrl-C.
-    err = disable_sigint() do
-        @tcall @locked ccall(
-            (:Pa_ReadStream, libportaudio),
-            PaError,
-            (PaStream, Ptr{Cvoid}, Culong),
-            stream,
-            buf,
-            frames,
-        )
-    end
-    handle_status(err, show_warnings)
-    err
+    handle_status(
+        disable_sigint() do
+            @tcall @locked ccall(
+                (:Pa_ReadStream, libportaudio),
+                PaError,
+                (PaStream, Ptr{Cvoid}, Culong),
+                stream,
+                buf,
+                frames,
+            )
+        end,
+        warn_xruns = warn_xruns,
+    )
 end
 
-function Pa_WriteStream(stream::PaStream, buf::Array, frames::Integer, show_warnings = true)
-    err = disable_sigint() do
-        @tcall @locked ccall(
-            (:Pa_WriteStream, libportaudio),
-            PaError,
-            (PaStream, Ptr{Cvoid}, Culong),
-            stream,
-            buf,
-            frames,
-        )
-    end
-    handle_status(err, show_warnings)
-    err
+function Pa_WriteStream(stream::PaStream, buf::Array, frames::Integer; warn_xruns = true)
+    handle_status(
+        disable_sigint() do
+            @tcall @locked ccall(
+                (:Pa_WriteStream, libportaudio),
+                PaError,
+                (PaStream, Ptr{Cvoid}, Culong),
+                stream,
+                buf,
+                frames,
+            )
+        end,
+        warn_xruns = warn_xruns,
+    )
 end
 
 # function Pa_GetStreamInfo(stream::PaStream)
-#     infoptr = ccall((:Pa_GetStreamInfo, libportaudio), Ptr{PaStreamInfo},
-#             (PaStream, ), stream)
-#     if infoptr == C_NULL
-#         error("Error getting stream info. Is the stream already closed?")
-#     end
-#     unsafe_load(infoptr)
+#     safe_load(
+#         ccall((:Pa_GetStreamInfo, libportaudio), Ptr{PaStreamInfo},
+#             (PaStream, ), stream),
+#         ArgumentError("Error getting stream info. Is the stream already closed?")
+#     )
 # end
 #
 # General utility function to handle the status from the Pa_* functions
-function handle_status(err::Integer, show_warnings::Bool = true)
-    if err == PA_OUTPUT_UNDERFLOWED || err == PA_INPUT_OVERFLOWED
-        if show_warnings
-            msg =
-                @locked ccall((:Pa_GetErrorText, libportaudio), Ptr{Cchar}, (PaError,), err)
-            @warn("libportaudio: " * unsafe_string(msg))
-        end
-    elseif err != PA_NO_ERROR
+function handle_status(err::Integer; warn_xruns::Bool = true)
+    if err < 0
         msg = @locked ccall((:Pa_GetErrorText, libportaudio), Ptr{Cchar}, (PaError,), err)
-        throw(ErrorException("libportaudio: " * unsafe_string(msg)))
+        if err == PA_OUTPUT_UNDERFLOWED || err == PA_INPUT_OVERFLOWED
+            if warn_xruns
+                @warn("libportaudio: " * unsafe_string(msg))
+            end
+        else
+            throw(ErrorException("libportaudio: " * unsafe_string(msg)))
+        end
     end
+    err
 end
