@@ -4,18 +4,19 @@ using Logging: Debug
 using PortAudio
 using PortAudio:
     combine_default_sample_rates,
+    get_device_info,
     handle_status,
     Pa_GetDefaultInputDevice,
     Pa_GetDefaultOutputDevice,
-    Pa_GetDeviceInfo,
-    Pa_GetHostApiInfo,
     Pa_Initialize,
-    PA_OUTPUT_UNDERFLOWED,
+    paOutputUnderflowed,
     Pa_Terminate,
     PortAudioDevice,
     recover_xrun,
     seek_alsa_conf,
-    @stderr_as_debug
+    @stderr_as_debug,
+    @locked
+using PortAudio.LibPortAudio: paNotInitialized
 using SampledSignals
 using Test
 
@@ -40,21 +41,20 @@ end
     end
 
     @testset "Null errors" begin
-        @test_throws BoundsError Pa_GetDeviceInfo(-1)
-        @test_throws BoundsError Pa_GetHostApiInfo(-1)
+        @test_throws BoundsError get_device_info(-1)
     end
 end
 
 if !isempty(PortAudio.devices())
     # make sure we can terminate, then reinitialize
-    Pa_Terminate()
-    @stderr_as_debug Pa_Initialize()
+    handle_status(@locked Pa_Terminate())
+    @stderr_as_debug handle_status(@locked Pa_Initialize())
 
     # these default values are specific to my machines
-    inidx = Pa_GetDefaultInputDevice()
-    default_indev = PortAudioDevice(Pa_GetDeviceInfo(inidx), inidx).name
-    outidx = Pa_GetDefaultOutputDevice()
-    default_outdev = PortAudioDevice(Pa_GetDeviceInfo(outidx), outidx).name
+    inidx = handle_status(@locked Pa_GetDefaultInputDevice())
+    default_indev = PortAudioDevice(get_device_info(inidx), inidx).name
+    outidx = handle_status(@locked Pa_GetDefaultOutputDevice())
+    default_outdev = PortAudioDevice(get_device_info(outidx), outidx).name
 
     @testset "Local Tests" begin
         @testset "Open Default Device" begin
@@ -126,10 +126,10 @@ if !isempty(PortAudio.devices())
             @test_throws ErrorException PortAudioStream("foobarbaz")
             @test_throws ErrorException PortAudioStream(default_indev, "foobarbaz")
             @test_logs (:warn, "libportaudio: Output underflowed") handle_status(
-                PA_OUTPUT_UNDERFLOWED,
+                paOutputUnderflowed,
             )
             @test_throws ErrorException("libportaudio: PortAudio not initialized") handle_status(
-                -10000,
+                paNotInitialized,
             )
             @test_throws ErrorException("""
                 Could not find ALSA config directory. Searched:

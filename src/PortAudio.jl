@@ -14,6 +14,92 @@ using LinearAlgebra: transpose!
 export PortAudioStream
 
 include("libportaudio.jl")
+using .LibPortAudio: 
+    PaSampleFormat, 
+    Pa_Initialize, 
+    Pa_Terminate, 
+    Pa_GetVersion, 
+    PaDeviceIndex, 
+    PaDeviceInfo, 
+    Pa_GetVersionText, 
+    PaHostApiTypeId, 
+    Pa_GetHostApiInfo, 
+    PaStream, 
+    Pa_GetDeviceCount, 
+    Pa_GetDeviceInfo, 
+    Pa_GetDefaultInputDevice, 
+    Pa_GetDefaultOutputDevice, 
+    Pa_OpenStream, 
+    Pa_StartStream, 
+    Pa_StopStream, 
+    Pa_CloseStream, 
+    Pa_GetStreamReadAvailable, 
+    Pa_GetStreamWriteAvailable, 
+    Pa_ReadStream, 
+    Pa_WriteStream, 
+    Pa_GetErrorText, 
+    paOutputUnderflowed,
+    paInputOverflowed,
+    paNoFlag,
+    PaStreamParameters,
+    PaErrorCode
+
+function safe_load(result, an_error)
+    if result == C_NULL
+        throw(an_error)
+    end
+    unsafe_load(result)
+end
+
+"""
+Call the given expression in a separate thread, waiting on the result. This is
+useful when running code that would otherwise block the Julia process (like a
+`ccall` into a function that does IO).
+"""
+macro tcall(ex)
+    :(fetch(Base.Threads.@spawn $(esc(ex))))
+end
+
+# because we're calling Pa_ReadStream and PA_WriteStream from separate threads,
+# we put a mutex around libportaudio calls
+const pamutex = ReentrantLock()
+
+macro locked(ex)
+    quote
+        lock(pamutex) do
+            $(esc(ex))
+        end
+    end
+end
+
+convert_nothing(::Nothing) = C_NULL
+convert_nothing(something) = something
+
+function is_xrun(error_code)
+    error_code == paOutputUnderflowed || error_code == paInputOverflowed
+end
+
+function is_xrun(number::Integer)
+    is_xrun(PaErrorCode(number))
+end
+
+function get_error_text(error_code)
+    unsafe_string(@locked Pa_GetErrorText(error_code))
+end
+
+# General utility function to handle the status from the Pa_* functions
+function handle_status(err; warn_xruns::Bool = true)
+    if Int(err) < 0
+        if is_xrun(err)
+            if warn_xruns
+                @warn("libportaudio: " * get_error_text(err))
+            end
+        else
+            throw(ErrorException("libportaudio: " * get_error_text(err)))
+        end
+    end
+    err
+end
 
 macro stderr_as_debug(expression)
     quote
@@ -31,8 +117,8 @@ end
 const CHUNKFRAMES = 128
 
 function versioninfo(io::IO = stdout)
-    println(io, Pa_GetVersionText())
-    println(io, "Version: ", Pa_GetVersion())
+    println(io, unsafe_string(@locked Pa_GetVersionText()))
+    println(io, "Version: ", @locked Pa_GetVersion())
 end
 
 struct Bounds
@@ -53,26 +139,36 @@ end
 function PortAudioDevice(info::PaDeviceInfo, idx)
     PortAudioDevice(
         unsafe_string(info.name),
-        unsafe_string(Pa_GetHostApiInfo(info.host_api).name),
-        info.default_sample_rate,
+        unsafe_string(safe_load(
+            (@locked Pa_GetHostApiInfo(info.hostApi)),
+            BoundsError(Pa_GetHostApiInfo, idx),
+        ).name),
+        info.defaultSampleRate,
         idx,
         Bounds(
-            info.max_input_channels,
-            info.default_low_input_latency,
-            info.default_high_input_latency,
+            info.maxInputChannels,
+            info.defaultLowInputLatency,
+            info.defaultHighInputLatency,
         ),
         Bounds(
-            info.max_output_channels,
-            info.default_low_output_latency,
-            info.default_high_output_latency,
+            info.maxOutputChannels,
+            info.defaultLowOutputLatency,
+            info.defaultHighInputLatency,
         ),
     )
 end
 
 name(device::PortAudioDevice) = device.name
 
+function get_device_info(i)
+    safe_load(
+        (@locked Pa_GetDeviceInfo(i)),
+        BoundsError(Pa_GetDeviceInfo, i),
+    )
+end
+
 function devices()
-    [PortAudioDevice(Pa_GetDeviceInfo(i), i) for i in 0:(Pa_GetDeviceCount() - 1)]
+    [PortAudioDevice(get_device_info(i), i) for i in 0:(handle_status(@locked Pa_GetDeviceCount()) - 1)]
 end
 
 struct Buffer{T}
@@ -88,19 +184,28 @@ end
 struct PortAudioStream{T}
     samplerate::Float64
     latency::Float64
-    pointer_ref::Ref{PaStream}
+    pointer_ref::Ref{Ptr{PaStream}}
     warn_xruns::Bool
     recover_xruns::Bool
     sink_buffer::Buffer{T}
     source_buffer::Buffer{T}
 end
 
+const type_to_fmt = Dict{Type, PaSampleFormat}(
+    Float32 => 1,
+    Int32 => 2,
+    # Int24 => 4,
+    Int16 => 8,
+    Int8 => 16,
+    UInt8 => 3,
+)
+
 function make_parameters(device, channels, T, latency, host_api_specific_stream_info)
     if channels == 0
-        Ptr{Pa_StreamParameters}(0)
+        Ptr{PaStreamParameters}(0)
     else
         Ref(
-            Pa_StreamParameters(
+            PaStreamParameters(
                 device.idx,
                 channels,
                 type_to_fmt[T],
@@ -205,16 +310,20 @@ function PortAudioStream(
 )
     inchans = fill_max_channels(inchans, indev.input_bounds)
     outchans = fill_max_channels(outchans, outdev.output_bounds)
-    pointer_ref = @stderr_as_debug Pa_OpenStream(
-        make_parameters(indev, inchans, eltype, latency, input_info),
-        make_parameters(outdev, outchans, eltype, latency, output_info),
-        samplerate,
-        frames_per_buffer,
-        flags,
-        callback,
-        user_data,
+    pointer_ref = streamPtr = Ref{Ptr{PaStream}}(0)
+    handle_status(
+        @locked @stderr_as_debug Pa_OpenStream(
+            streamPtr,
+            make_parameters(indev, inchans, eltype, latency, input_info),
+            make_parameters(outdev, outchans, eltype, latency, output_info),
+            float(samplerate),
+            frames_per_buffer,
+            flags,
+            convert_nothing(callback),
+            convert_nothing(user_data),
+        )
     )
-    Pa_StartStream(pointer_ref[])
+    handle_status(@locked Pa_StartStream(pointer_ref[]))
     this = PortAudioStream{eltype}(
         samplerate,
         latency,
@@ -273,11 +382,11 @@ end
 
 # use the default input and output devices
 function PortAudioStream(inchans = 2, outchans = 2; kwargs...)
-    inidx = Pa_GetDefaultInputDevice()
-    outidx = Pa_GetDefaultOutputDevice()
+    inidx = handle_status(@locked Pa_GetDefaultInputDevice())
+    outidx = handle_status(@locked Pa_GetDefaultOutputDevice())
     PortAudioStream(
-        PortAudioDevice(Pa_GetDeviceInfo(inidx), inidx),
-        PortAudioDevice(Pa_GetDeviceInfo(outidx), outidx),
+        PortAudioDevice(get_device_info(inidx), inidx),
+        PortAudioDevice(get_device_info(outidx), outidx),
         inchans,
         outchans;
         kwargs...,
@@ -298,8 +407,8 @@ function close(stream::PortAudioStream)
     pointer_ref = stream.pointer_ref
     pointer = pointer_ref[]
     if pointer != C_NULL
-        Pa_StopStream(pointer)
-        Pa_CloseStream(pointer)
+        handle_status(@locked Pa_StopStream(pointer))
+        handle_status(@locked Pa_CloseStream(pointer))
         pointer_ref[] = C_NULL
     end
     nothing
@@ -402,10 +511,22 @@ function interleave!(long, wide, n, already, offset, wide_to_long)
 end
 
 function handle_xrun(stream, error_code, recover_xruns)
-    if recover_xruns &&
-       (error_code == PA_OUTPUT_UNDERFLOWED || error_code == PA_INPUT_OVERFLOWED)
+    if recover_xruns && is_xrun(error_code)
         recover_xrun(stream)
     end
+end
+
+function write_stream(stream::Ptr{PaStream}, buf::Array, frames::Integer; warn_xruns = true)
+    handle_status(
+        disable_sigint() do
+            @tcall @locked Pa_WriteStream(
+                stream,
+                buf,
+                frames,
+            )
+        end,
+        warn_xruns = warn_xruns,
+    )
 end
 
 function SampledSignals.unsafe_write(
@@ -428,13 +549,31 @@ function SampledSignals.unsafe_write(
         # shorter-than-requested frame count instead of throwing an error
         handle_xrun(
             stream,
-            Pa_WriteStream(pointer, chunkbuf, n, warn_xruns = warn_xruns),
+            write_stream(pointer, chunkbuf, n, warn_xruns = warn_xruns),
             recover_xruns,
         )
         nwritten += n
     end
 
     nwritten
+end
+
+function read_stream(stream::Ptr{PaStream}, buf::Array, frames::Integer; warn_xruns = true)
+    # without disable_sigint I get a segfault with the error:
+    # "error thrown and no exception handler available."
+    # if the user tries to ctrl-C. Note I've still had some crash problems with
+    # ctrl-C within `pasuspend`, so for now I think either don't use `pasuspend` or
+    # don't use ctrl-C.
+    handle_status(
+        disable_sigint() do
+            @tcall @locked Pa_ReadStream(
+                stream,
+                buf,
+                frames
+            )
+        end,
+        warn_xruns = warn_xruns,
+    )
 end
 
 function SampledSignals.unsafe_read!(
@@ -455,7 +594,7 @@ function SampledSignals.unsafe_read!(
         # shorter-than-requested frame count instead of throwing an error
         handle_xrun(
             stream,
-            Pa_ReadStream(pointer, chunkbuf, n, warn_xruns = warn_xruns),
+            read_stream(pointer, chunkbuf, n, warn_xruns = warn_xruns),
             recover_xruns,
         )
         # de-interleave the samples
@@ -476,11 +615,11 @@ function prefill_output(sink::PortAudioSink)
         stream = sink.stream
         pointer = stream.pointer_ref[]
         chunkbuf = stream.sink_buffer.chunkbuf
-        towrite = Pa_GetStreamWriteAvailable(pointer)
+        towrite = handle_status(@locked Pa_GetStreamWriteAvailable(pointer))
         while towrite > 0
             n = min(towrite, CHUNKFRAMES)
             fill!(chunkbuf, zero(eltype(chunkbuf)))
-            Pa_WriteStream(pointer, chunkbuf, n, warn_xruns = false)
+            write_stream(pointer, chunkbuf, n, warn_xruns = false)
             towrite -= n
         end
     end
@@ -495,10 +634,10 @@ function discard_input(source::PortAudioSource)
     stream = source.stream
     pointer = stream.pointer_ref[]
     chunkbuf = stream.source_buffer.chunkbuf
-    toread = Pa_GetStreamReadAvailable(pointer)
+    toread = handle_status(@locked Pa_GetStreamReadAvailable(pointer))
     while toread > 0
         n = min(toread, CHUNKFRAMES)
-        Pa_ReadStream(pointer, chunkbuf, n, warn_xruns = false)
+        read_stream(pointer, chunkbuf, n, warn_xruns = false)
         toread -= n
     end
 end
@@ -543,10 +682,10 @@ function __init__()
     # junk to STDOUT on initialization, so we swallow it.
     # TODO: actually check the junk to make sure there's nothing in there we
     # don't expect
-    @stderr_as_debug Pa_Initialize()
+    @stderr_as_debug handle_status(@locked Pa_Initialize())
 
     atexit() do
-        Pa_Terminate()
+        handle_status(@locked Pa_Terminate())
     end
 end
 
