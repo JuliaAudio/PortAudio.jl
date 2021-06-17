@@ -1,24 +1,25 @@
 #!/usr/bin/env julia
 
 using Logging: Debug
-using PortAudio
 using PortAudio:
     combine_default_sample_rates,
+    devices,
+    get_default_input_device,
+    get_default_output_device,
     get_device_info,
     handle_status,
-    Pa_GetDefaultInputDevice,
-    Pa_GetDefaultOutputDevice,
-    Pa_Initialize,
+    initialize,
     paOutputUnderflowed,
-    Pa_Terminate,
+    PortAudio,
     PortAudioDevice,
+    PortAudioStream,
     recover_xrun,
     seek_alsa_conf,
     @stderr_as_debug,
-    @locked
+    terminate
 using PortAudio.LibPortAudio: paNotInitialized
-using SampledSignals
-using Test
+using SampledSignals: nchannels, s, SampleBuf, samplerate, SinSource
+using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
 
 @testset "Debug messages" begin
     @test_logs (:debug, "hi") min_level = Debug @test_nowarn @stderr_as_debug begin
@@ -37,7 +38,7 @@ end
     end
 
     @testset "Can list devices without crashing" begin
-        PortAudio.devices()
+        devices()
     end
 
     @testset "Null errors" begin
@@ -45,15 +46,15 @@ end
     end
 end
 
-if !isempty(PortAudio.devices())
+if !isempty(devices())
     # make sure we can terminate, then reinitialize
-    handle_status(@locked Pa_Terminate())
-    @stderr_as_debug handle_status(@locked Pa_Initialize())
+    terminate()
+    initialize()
 
     # these default values are specific to my machines
-    inidx = handle_status(@locked Pa_GetDefaultInputDevice())
+    inidx = get_default_input_device()
     default_indev = PortAudioDevice(get_device_info(inidx), inidx).name
-    outidx = handle_status(@locked Pa_GetDefaultOutputDevice())
+    outidx = get_default_output_device()
     default_outdev = PortAudioDevice(get_device_info(outidx), outidx).name
 
     @testset "Local Tests" begin

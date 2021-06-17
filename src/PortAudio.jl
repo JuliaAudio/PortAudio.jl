@@ -1,48 +1,45 @@
 module PortAudio
 
 using alsa_plugins_jll: alsa_plugins_jll
+import Base: close, eltype, getproperty, isopen, read, read!, show, write
 using libportaudio_jll: libportaudio
-using SampledSignals
-using Suppressor: @capture_err
-
-import Base: eltype, getproperty, show
-import Base: close, isopen
-import Base: read, read!, write
-
 using LinearAlgebra: transpose!
+import SampledSignals: nchannels, samplerate, unsafe_read!, unsafe_write
+using SampledSignals: SampleSink, SampleSource
+using Suppressor: @capture_err
 
 export PortAudioStream
 
 include("libportaudio.jl")
-using .LibPortAudio: 
-    PaSampleFormat, 
-    Pa_Initialize, 
-    Pa_Terminate, 
-    Pa_GetVersion, 
-    PaDeviceIndex, 
-    PaDeviceInfo, 
-    Pa_GetVersionText, 
-    PaHostApiTypeId, 
-    Pa_GetHostApiInfo, 
-    PaStream, 
-    Pa_GetDeviceCount, 
-    Pa_GetDeviceInfo, 
-    Pa_GetDefaultInputDevice, 
-    Pa_GetDefaultOutputDevice, 
-    Pa_OpenStream, 
-    Pa_StartStream, 
-    Pa_StopStream, 
-    Pa_CloseStream, 
-    Pa_GetStreamReadAvailable, 
-    Pa_GetStreamWriteAvailable, 
-    Pa_ReadStream, 
-    Pa_WriteStream, 
-    Pa_GetErrorText, 
-    paOutputUnderflowed,
+using .LibPortAudio:
+    Pa_CloseStream,
+    PaDeviceIndex,
+    PaDeviceInfo,
+    PaErrorCode,
+    Pa_GetDefaultInputDevice,
+    Pa_GetDefaultOutputDevice,
+    Pa_GetDeviceCount,
+    Pa_GetDeviceInfo,
+    Pa_GetErrorText,
+    Pa_GetHostApiInfo,
+    Pa_GetStreamReadAvailable,
+    Pa_GetStreamWriteAvailable,
+    Pa_GetVersionText,
+    Pa_GetVersion,
+    PaHostApiTypeId,
+    Pa_Initialize,
     paInputOverflowed,
     paNoFlag,
+    Pa_OpenStream,
+    paOutputUnderflowed,
+    Pa_ReadStream,
+    PaSampleFormat,
+    Pa_StartStream,
+    Pa_StopStream,
+    PaStream,
     PaStreamParameters,
-    PaErrorCode
+    Pa_Terminate,
+    Pa_WriteStream
 
 function safe_load(result, an_error)
     if result == C_NULL
@@ -110,6 +107,14 @@ macro stderr_as_debug(expression)
     end
 end
 
+function initialize()
+    @stderr_as_debug handle_status(@locked Pa_Initialize())
+end
+
+function terminate()
+    handle_status(@locked Pa_Terminate())
+end
+
 # This size is in frames
 
 # data is passed to and from portaudio in chunks with this many frames, because
@@ -139,10 +144,12 @@ end
 function PortAudioDevice(info::PaDeviceInfo, idx)
     PortAudioDevice(
         unsafe_string(info.name),
-        unsafe_string(safe_load(
-            (@locked Pa_GetHostApiInfo(info.hostApi)),
-            BoundsError(Pa_GetHostApiInfo, idx),
-        ).name),
+        unsafe_string(
+            safe_load(
+                (@locked Pa_GetHostApiInfo(info.hostApi)),
+                BoundsError(Pa_GetHostApiInfo, idx),
+            ).name,
+        ),
         info.defaultSampleRate,
         idx,
         Bounds(
@@ -160,15 +167,23 @@ end
 
 name(device::PortAudioDevice) = device.name
 
+function get_default_input_device()
+    handle_status(@locked Pa_GetDefaultInputDevice())
+end
+
+function get_default_output_device()
+    handle_status(@locked Pa_GetDefaultOutputDevice())
+end
+
 function get_device_info(i)
-    safe_load(
-        (@locked Pa_GetDeviceInfo(i)),
-        BoundsError(Pa_GetDeviceInfo, i),
-    )
+    safe_load((@locked Pa_GetDeviceInfo(i)), BoundsError(Pa_GetDeviceInfo, i))
 end
 
 function devices()
-    [PortAudioDevice(get_device_info(i), i) for i in 0:(handle_status(@locked Pa_GetDeviceCount()) - 1)]
+    [
+        PortAudioDevice(get_device_info(i), i) for
+        i in 0:(handle_status(@locked Pa_GetDeviceCount()) - 1)
+    ]
 end
 
 struct Buffer{T}
@@ -382,8 +397,8 @@ end
 
 # use the default input and output devices
 function PortAudioStream(inchans = 2, outchans = 2; kwargs...)
-    inidx = handle_status(@locked Pa_GetDefaultInputDevice())
-    outidx = handle_status(@locked Pa_GetDefaultOutputDevice())
+    inidx = get_default_input_device()
+    outidx = get_default_output_device()
     PortAudioStream(
         PortAudioDevice(get_device_info(inidx), inidx),
         PortAudioDevice(get_device_info(outidx), outidx),
@@ -416,7 +431,7 @@ end
 
 isopen(stream::PortAudioStream) = stream.pointer_ref[] != C_NULL
 
-SampledSignals.samplerate(stream::PortAudioStream) = stream.samplerate
+samplerate(stream::PortAudioStream) = stream.samplerate
 eltype(::Type{PortAudioStream{T}}) where {T} = T
 
 read(stream::PortAudioStream, args...) = read(stream.source, args...)
@@ -470,12 +485,12 @@ function Buffer{T}(device, channels) where {T}
     Buffer(device, chunkbuf, channels)
 end
 
-SampledSignals.nchannels(buffer::Buffer) = buffer.nchannels
+nchannels(buffer::Buffer) = buffer.nchannels
 name(buffer::Buffer) = name(buffer.device)
 
-SampledSignals.nchannels(s::PortAudioSource) = nchannels(s.stream.source_buffer)
-SampledSignals.nchannels(s::PortAudioSink) = nchannels(s.stream.sink_buffer)
-SampledSignals.samplerate(s::Union{PortAudioSink, PortAudioSource}) = samplerate(s.stream)
+nchannels(s::PortAudioSource) = nchannels(s.stream.source_buffer)
+nchannels(s::PortAudioSink) = nchannels(s.stream.sink_buffer)
+samplerate(s::Union{PortAudioSink, PortAudioSource}) = samplerate(s.stream)
 eltype(::Type{<:Union{PortAudioSink{T}, PortAudioSource{T}}}) where {T} = T
 function close(::Union{PortAudioSink, PortAudioSource})
     throw(ErrorException("""
@@ -519,22 +534,13 @@ end
 function write_stream(stream::Ptr{PaStream}, buf::Array, frames::Integer; warn_xruns = true)
     handle_status(
         disable_sigint() do
-            @tcall @locked Pa_WriteStream(
-                stream,
-                buf,
-                frames,
-            )
+            @tcall @locked Pa_WriteStream(stream, buf, frames)
         end,
         warn_xruns = warn_xruns,
     )
 end
 
-function SampledSignals.unsafe_write(
-    sink::PortAudioSink,
-    buf::Array,
-    frameoffset,
-    framecount,
-)
+function unsafe_write(sink::PortAudioSink, buf::Array, frameoffset, framecount)
     stream = sink.stream
     pointer = stream.pointer_ref[]
     chunkbuf = stream.sink_buffer.chunkbuf
@@ -566,22 +572,13 @@ function read_stream(stream::Ptr{PaStream}, buf::Array, frames::Integer; warn_xr
     # don't use ctrl-C.
     handle_status(
         disable_sigint() do
-            @tcall @locked Pa_ReadStream(
-                stream,
-                buf,
-                frames
-            )
+            @tcall @locked Pa_ReadStream(stream, buf, frames)
         end,
         warn_xruns = warn_xruns,
     )
 end
 
-function SampledSignals.unsafe_read!(
-    source::PortAudioSource,
-    buf::Array,
-    frameoffset,
-    framecount,
-)
+function unsafe_read!(source::PortAudioSource, buf::Array, frameoffset, framecount)
     stream = source.stream
     pointer = stream.pointer_ref[]
     chunkbuf = stream.source_buffer.chunkbuf
@@ -682,10 +679,10 @@ function __init__()
     # junk to STDOUT on initialization, so we swallow it.
     # TODO: actually check the junk to make sure there's nothing in there we
     # don't expect
-    @stderr_as_debug handle_status(@locked Pa_Initialize())
+    @stderr_as_debug handle_status(initialize())
 
     atexit() do
-        handle_status(@locked Pa_Terminate())
+        handle_status(@locked terminate())
     end
 end
 
