@@ -112,8 +112,8 @@ if !isempty(devices())
         @test Bool(handle_status(Pa_IsStreamActive(pointer)))
         @test safe_load(Pa_GetStreamInfo(pointer), ErrorException("no info")) isa
               PaStreamInfo
-        @test Pa_GetStreamTime(pointer) == 0
-        @test Pa_GetStreamCpuLoad(pointer) == 0
+        handle_status(Pa_GetStreamTime(pointer))
+        handle_status(Pa_GetStreamCpuLoad(pointer))
         @test PaErrorCode(handle_status(Pa_AbortStream(pointer))) == paNoError
         @test PaErrorCode(handle_status(Pa_SetStreamFinishedCallback(pointer, C_NULL))) ==
               paNoError
