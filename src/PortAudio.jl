@@ -325,10 +325,10 @@ function PortAudioStream(
 )
     inchans = fill_max_channels(inchans, indev.input_bounds)
     outchans = fill_max_channels(outchans, outdev.output_bounds)
-    pointer_ref = streamPtr = Ref{Ptr{PaStream}}(0)
+    pointer_ref = Ref{Ptr{PaStream}}(0)
     handle_status(
         @locked @stderr_as_debug Pa_OpenStream(
-            streamPtr,
+            pointer_ref,
             make_parameters(indev, inchans, eltype, latency, input_info),
             make_parameters(outdev, outchans, eltype, latency, output_info),
             float(samplerate),
@@ -679,10 +679,10 @@ function __init__()
     # junk to STDOUT on initialization, so we swallow it.
     # TODO: actually check the junk to make sure there's nothing in there we
     # don't expect
-    @stderr_as_debug handle_status(initialize())
+    initialize()
 
     atexit() do
-        handle_status(@locked terminate())
+        terminate()
     end
 end
 

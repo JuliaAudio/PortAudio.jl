@@ -14,10 +14,38 @@ using PortAudio:
     PortAudioDevice,
     PortAudioStream,
     recover_xrun,
+    safe_load,
     seek_alsa_conf,
     @stderr_as_debug,
     terminate
-using PortAudio.LibPortAudio: paNotInitialized
+using PortAudio.LibPortAudio:
+    Pa_AbortStream,
+    PaErrorCode,
+    paFloat32,
+    Pa_GetDefaultHostApi,
+    Pa_GetHostApiCount,
+    Pa_GetLastHostErrorInfo,
+    Pa_GetSampleSize,
+    Pa_GetStreamCpuLoad,
+    Pa_GetStreamInfo,
+    Pa_GetStreamTime,
+    Pa_HostApiDeviceIndexToDeviceIndex,
+    Pa_HostApiTypeIdToHostApiIndex,
+    PaHostErrorInfo,
+    paInDevelopment,
+    paInvalidDevice,
+    Pa_IsFormatSupported,
+    Pa_IsStreamActive,
+    Pa_IsStreamStopped,
+    paNoError,
+    paNoFlag,
+    paNotInitialized,
+    Pa_OpenDefaultStream,
+    Pa_SetStreamFinishedCallback,
+    Pa_Sleep,
+    PaStream,
+    PaStreamInfo,
+    PaStreamParameters
 using SampledSignals: nchannels, s, SampleBuf, samplerate, SinSource
 using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
 
@@ -50,6 +78,48 @@ if !isempty(devices())
     # make sure we can terminate, then reinitialize
     terminate()
     initialize()
+
+    @testset "libportaudio" begin
+        @test handle_status(Pa_GetHostApiCount()) isa Integer
+        @test handle_status(Pa_GetDefaultHostApi()) isa Integer
+        @test_throws ErrorException handle_status(
+            Pa_HostApiTypeIdToHostApiIndex(paInDevelopment),
+        )
+        @test Pa_HostApiDeviceIndexToDeviceIndex(paInDevelopment, 0) == 0
+        safe_load(Pa_GetLastHostErrorInfo(), ErrorException("no info")) isa PaHostErrorInfo
+        @test PaErrorCode(
+            Pa_IsFormatSupported(
+                Ptr{PaStreamParameters}(0),
+                Ptr{PaStreamParameters}(0),
+                0.0,
+            ),
+        ) == paInvalidDevice
+        @test PaErrorCode(
+            Pa_OpenDefaultStream(
+                Ref{Ptr{PaStream}}(0),
+                0,
+                0,
+                paFloat32,
+                0.0,
+                0,
+                C_NULL,
+                C_NULL,
+            ),
+        ) == paInvalidDevice
+        stream = PortAudioStream(0, 2)
+        pointer = stream.pointer_ref[]
+        @test !(Bool(handle_status(Pa_IsStreamStopped(pointer))))
+        @test Bool(handle_status(Pa_IsStreamActive(pointer)))
+        @test safe_load(Pa_GetStreamInfo(pointer), ErrorException("no info")) isa
+              PaStreamInfo
+        @test Pa_GetStreamTime(pointer) == 0
+        @test Pa_GetStreamCpuLoad(pointer) == 0
+        @test PaErrorCode(handle_status(Pa_AbortStream(pointer))) == paNoError
+        @test PaErrorCode(handle_status(Pa_SetStreamFinishedCallback(pointer, C_NULL))) ==
+              paNoError
+        Pa_Sleep(1)
+        @test Pa_GetSampleSize(paFloat32) == 4
+    end
 
     # these default values are specific to my machines
     inidx = get_default_input_device()
