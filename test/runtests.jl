@@ -20,6 +20,7 @@ using PortAudio:
     terminate
 using PortAudio.LibPortAudio:
     Pa_AbortStream,
+    PaError,
     PaErrorCode,
     paFloat32,
     Pa_GetDefaultHostApi,
@@ -30,6 +31,7 @@ using PortAudio.LibPortAudio:
     Pa_GetStreamInfo,
     Pa_GetStreamTime,
     Pa_HostApiDeviceIndexToDeviceIndex,
+    paHostApiNotFound,
     Pa_HostApiTypeIdToHostApiIndex,
     PaHostErrorInfo,
     paInDevelopment,
@@ -80,40 +82,24 @@ if !isempty(devices())
     initialize()
 
     @testset "libportaudio" begin
-        @test handle_status(Pa_GetHostApiCount()) isa Integer
-        @test handle_status(Pa_GetDefaultHostApi()) isa Integer
-        @test_throws ErrorException handle_status(
-            Pa_HostApiTypeIdToHostApiIndex(paInDevelopment),
-        )
+        @test handle_status(Pa_GetHostApiCount()) >= 0
+        @test handle_status(Pa_GetDefaultHostApi()) >= 0
+        @test PaErrorCode(Pa_HostApiTypeIdToHostApiIndex(paInDevelopment)) ==
+                     paHostApiNotFound
         @test Pa_HostApiDeviceIndexToDeviceIndex(paInDevelopment, 0) == 0
-        safe_load(Pa_GetLastHostErrorInfo(), ErrorException("no info")) isa PaHostErrorInfo
+        @test safe_load(Pa_GetLastHostErrorInfo(), ErrorException("no info")) isa PaHostErrorInfo
+        @test PaErrorCode(Pa_IsFormatSupported(C_NULL, C_NULL, 0.0)) == paInvalidDevice
         @test PaErrorCode(
-            Pa_IsFormatSupported(
-                Ptr{PaStreamParameters}(0),
-                Ptr{PaStreamParameters}(0),
-                0.0,
-            ),
+            Pa_OpenDefaultStream(Ref(C_NULL), 0, 0, paFloat32, 0.0, 0, C_NULL, C_NULL),
         ) == paInvalidDevice
-        @test PaErrorCode(
-            Pa_OpenDefaultStream(
-                Ref{Ptr{PaStream}}(0),
-                0,
-                0,
-                paFloat32,
-                0.0,
-                0,
-                C_NULL,
-                C_NULL,
-            ),
-        ) == paInvalidDevice
-        stream = PortAudioStream(0, 2)
+        stream = PortAudioStream(2, 2)
         pointer = stream.pointer_ref[]
         @test !(Bool(handle_status(Pa_IsStreamStopped(pointer))))
         @test Bool(handle_status(Pa_IsStreamActive(pointer)))
         @test safe_load(Pa_GetStreamInfo(pointer), ErrorException("no info")) isa
               PaStreamInfo
-        Pa_GetStreamTime(pointer)
-        Pa_GetStreamCpuLoad(pointer)
+        @test Pa_GetStreamTime(pointer) >= 0
+        @test Pa_GetStreamCpuLoad(pointer) >= 0
         @test PaErrorCode(handle_status(Pa_AbortStream(pointer))) == paNoError
         @test PaErrorCode(handle_status(Pa_SetStreamFinishedCallback(pointer, C_NULL))) ==
               paNoError
@@ -197,10 +183,10 @@ if !isempty(devices())
             @test_throws ErrorException PortAudioStream("foobarbaz")
             @test_throws ErrorException PortAudioStream(default_indev, "foobarbaz")
             @test_logs (:warn, "libportaudio: Output underflowed") handle_status(
-                paOutputUnderflowed,
+                PaError(paOutputUnderflowed)
             )
             @test_throws ErrorException("libportaudio: PortAudio not initialized") handle_status(
-                paNotInitialized,
+                PaError(paNotInitialized)
             )
             @test_throws ErrorException("""
                 Could not find ALSA config directory. Searched:

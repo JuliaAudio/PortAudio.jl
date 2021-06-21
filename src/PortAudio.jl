@@ -76,26 +76,22 @@ function is_xrun(error_code)
     error_code == paOutputUnderflowed || error_code == paInputOverflowed
 end
 
-function is_xrun(number::Integer)
-    is_xrun(PaErrorCode(number))
-end
-
-function get_error_text(error_code)
-    unsafe_string(@locked Pa_GetErrorText(error_code))
+function get_error_text(error_number)
+    unsafe_string(@locked Pa_GetErrorText(error_number))
 end
 
 # General utility function to handle the status from the Pa_* functions
-function handle_status(err; warn_xruns::Bool = true)
-    if Int(err) < 0
-        if is_xrun(err)
+function handle_status(error_number; warn_xruns::Bool = true)
+    if error_number < 0
+        if is_xrun(PaErrorCode(error_number))
             if warn_xruns
-                @warn("libportaudio: " * get_error_text(err))
+                @warn("libportaudio: " * get_error_text(error_number))
             end
         else
-            throw(ErrorException("libportaudio: " * get_error_text(err)))
+            throw(ErrorException("libportaudio: " * get_error_text(error_number)))
         end
     end
-    err
+    error_number
 end
 
 macro stderr_as_debug(expression)
@@ -525,8 +521,8 @@ function interleave!(long, wide, n, already, offset, wide_to_long)
     end
 end
 
-function handle_xrun(stream, error_code, recover_xruns)
-    if recover_xruns && is_xrun(error_code)
+function handle_xrun(stream, error_number, recover_xruns)
+    if recover_xruns && is_xrun(PaErrorCode(error_number))
         recover_xrun(stream)
     end
 end
