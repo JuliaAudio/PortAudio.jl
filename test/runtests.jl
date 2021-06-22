@@ -1,6 +1,5 @@
 #!/usr/bin/env julia
 
-using Logging: Debug
 using PortAudio:
     combine_default_sample_rates,
     devices,
@@ -9,14 +8,11 @@ using PortAudio:
     get_device_info,
     handle_status,
     initialize,
-    paOutputUnderflowed,
     PortAudio,
     PortAudioDevice,
     PortAudioStream,
-    recover_xrun,
     safe_load,
     seek_alsa_conf,
-    @stderr_as_debug,
     terminate
 using PortAudio.LibPortAudio:
     Pa_AbortStream,
@@ -38,11 +34,11 @@ using PortAudio.LibPortAudio:
     paInvalidDevice,
     Pa_IsFormatSupported,
     Pa_IsStreamActive,
-    Pa_IsStreamStopped,
     paNoError,
     paNoFlag,
     paNotInitialized,
     Pa_OpenDefaultStream,
+    paOutputUnderflowed,
     Pa_SetStreamFinishedCallback,
     Pa_Sleep,
     PaStream,
@@ -50,13 +46,6 @@ using PortAudio.LibPortAudio:
     PaStreamParameters
 using SampledSignals: nchannels, s, SampleBuf, samplerate, SinSource
 using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
-
-@testset "Debug messages" begin
-    @test_logs (:debug, "hi") min_level = Debug @test_nowarn @stderr_as_debug begin
-        print(stderr, "hi")
-        true
-    end
-end
 
 @testset "PortAudio Tests" begin
     @testset "Reports version" begin
@@ -85,24 +74,25 @@ if !isempty(devices())
         @test handle_status(Pa_GetHostApiCount()) >= 0
         @test handle_status(Pa_GetDefaultHostApi()) >= 0
         @test PaErrorCode(Pa_HostApiTypeIdToHostApiIndex(paInDevelopment)) ==
-                     paHostApiNotFound
+              paHostApiNotFound
         @test Pa_HostApiDeviceIndexToDeviceIndex(paInDevelopment, 0) == 0
-        @test safe_load(Pa_GetLastHostErrorInfo(), ErrorException("no info")) isa PaHostErrorInfo
+        @test safe_load(Pa_GetLastHostErrorInfo(), ErrorException("no info")) isa
+              PaHostErrorInfo
         @test PaErrorCode(Pa_IsFormatSupported(C_NULL, C_NULL, 0.0)) == paInvalidDevice
         @test PaErrorCode(
             Pa_OpenDefaultStream(Ref(C_NULL), 0, 0, paFloat32, 0.0, 0, C_NULL, C_NULL),
         ) == paInvalidDevice
         stream = PortAudioStream(2, 2)
-        pointer = stream.pointer_ref[]
-        @test !(Bool(handle_status(Pa_IsStreamStopped(pointer))))
-        @test Bool(handle_status(Pa_IsStreamActive(pointer)))
-        @test safe_load(Pa_GetStreamInfo(pointer), ErrorException("no info")) isa
+        pointer_to = stream.pointer_to
+        @test Bool(handle_status(Pa_IsStreamActive(pointer_to)))
+        @test safe_load(Pa_GetStreamInfo(pointer_to), ErrorException("no info")) isa
               PaStreamInfo
-        @test Pa_GetStreamTime(pointer) >= 0
-        @test Pa_GetStreamCpuLoad(pointer) >= 0
-        @test PaErrorCode(handle_status(Pa_AbortStream(pointer))) == paNoError
-        @test PaErrorCode(handle_status(Pa_SetStreamFinishedCallback(pointer, C_NULL))) ==
-              paNoError
+        @test Pa_GetStreamTime(pointer_to) >= 0
+        @test Pa_GetStreamCpuLoad(pointer_to) >= 0
+        @test PaErrorCode(handle_status(Pa_AbortStream(pointer_to))) == paNoError
+        @test PaErrorCode(
+            handle_status(Pa_SetStreamFinishedCallback(pointer_to, C_NULL)),
+        ) == paNoError
         Pa_Sleep(1)
         @test Pa_GetSampleSize(paFloat32) == 4
     end
@@ -132,7 +122,6 @@ if !isempty(devices())
             @test sprint(show, sink) == "2 channel sink: $(repr(default_indev))"
             @test sprint(show, source) == "2 channel source: $(repr(default_outdev))"
             write(stream, stream, 5s)
-            recover_xrun(stream)
             @test_throws ErrorException("""
                 Attempted to close PortAudioSink or PortAudioSource.
                 Close the containing PortAudioStream instead
@@ -183,10 +172,10 @@ if !isempty(devices())
             @test_throws ErrorException PortAudioStream("foobarbaz")
             @test_throws ErrorException PortAudioStream(default_indev, "foobarbaz")
             @test_logs (:warn, "libportaudio: Output underflowed") handle_status(
-                PaError(paOutputUnderflowed)
+                PaError(paOutputUnderflowed),
             )
             @test_throws ErrorException("libportaudio: PortAudio not initialized") handle_status(
-                PaError(paNotInitialized)
+                PaError(paNotInitialized),
             )
             @test_throws ErrorException("""
                 Could not find ALSA config directory. Searched:

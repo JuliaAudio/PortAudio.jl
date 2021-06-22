@@ -2,6 +2,7 @@ module PortAudio
 
 using alsa_plugins_jll: alsa_plugins_jll
 import Base: close, eltype, getproperty, isopen, read, read!, show, write
+using Base.Threads: @spawn
 using libportaudio_jll: libportaudio
 using LinearAlgebra: transpose!
 import SampledSignals: nchannels, samplerate, unsafe_read!, unsafe_write
@@ -11,10 +12,13 @@ using Suppressor: @capture_err
 export PortAudioStream
 
 include("libportaudio.jl")
+
 using .LibPortAudio:
+    paBadStreamPtr,
     Pa_CloseStream,
     PaDeviceIndex,
     PaDeviceInfo,
+    PaError,
     PaErrorCode,
     Pa_GetDefaultInputDevice,
     Pa_GetDefaultOutputDevice,
@@ -29,6 +33,7 @@ using .LibPortAudio:
     PaHostApiTypeId,
     Pa_Initialize,
     paInputOverflowed,
+    Pa_IsStreamStopped,
     paNoFlag,
     Pa_OpenStream,
     paOutputUnderflowed,
@@ -41,6 +46,8 @@ using .LibPortAudio:
     Pa_Terminate,
     Pa_WriteStream
 
+# for structs and strings results, PortAudio will return NULL instead of erroring
+# so we need to handle these errors
 function safe_load(result, an_error)
     if result == C_NULL
         throw(an_error)
@@ -48,42 +55,19 @@ function safe_load(result, an_error)
     unsafe_load(result)
 end
 
-"""
-Call the given expression in a separate thread, waiting on the result. This is
-useful when running code that would otherwise block the Julia process (like a
-`ccall` into a function that does IO).
-"""
-macro tcall(ex)
-    :(fetch(Base.Threads.@spawn $(esc(ex))))
-end
-
-# because we're calling Pa_ReadStream and PA_WriteStream from separate threads,
-# we put a mutex around libportaudio calls
-const pamutex = ReentrantLock()
-
-macro locked(ex)
-    quote
-        lock(pamutex) do
-            $(esc(ex))
-        end
-    end
-end
-
-convert_nothing(::Nothing) = C_NULL
-convert_nothing(something) = something
-
-function is_xrun(error_code)
-    error_code == paOutputUnderflowed || error_code == paInputOverflowed
-end
-
+# error numbers are integers, while error codes are an @enum
 function get_error_text(error_number)
-    unsafe_string(@locked Pa_GetErrorText(error_number))
+    unsafe_string(Pa_GetErrorText(error_number))
 end
 
-# General utility function to handle the status from the Pa_* functions
-function handle_status(error_number; warn_xruns::Bool = true)
+# for integer results, PortAudio will return a negative number instead of erroring
+# so we need to handle these errors
+function handle_status(error_number; warn_xruns = true)
     if error_number < 0
-        if is_xrun(PaErrorCode(error_number))
+        error_code = PaErrorCode(error_number)
+        if error_code == paOutputUnderflowed || error_code == paInputOverflowed
+            # warn instead of error after an warn_xrun
+            # allow users to disable these warnings
             if warn_xruns
                 @warn("libportaudio: " * get_error_text(error_number))
             end
@@ -94,32 +78,65 @@ function handle_status(error_number; warn_xruns::Bool = true)
     error_number
 end
 
-macro stderr_as_debug(expression)
-    quote
-        local result
-        debug_message = @capture_err result = $(esc(expression))
-        @debug debug_message
-        result
-    end
-end
-
 function initialize()
-    @stderr_as_debug handle_status(@locked Pa_Initialize())
+    # ALSA will throw extraneous warnings on start up
+    # send them to debug instead
+    debug_message = @capture_err handle_status(Pa_Initialize())
+    @debug debug_message
 end
 
 function terminate()
-    handle_status(@locked Pa_Terminate())
+    handle_status(Pa_Terminate())
+end
+
+# alsa needs to know where the configure file is
+function seek_alsa_conf(folders)
+    for folder in folders
+        if isfile(joinpath(folder, "alsa.conf"))
+            return folder
+        end
+    end
+    throw(ErrorException("""
+                      Could not find ALSA config directory. Searched:
+                      $(join(folders, "\n"))
+
+                      If ALSA is installed, set the "ALSA_CONFIG_DIR" environment
+                      variable. The given directory should have a file "alsa.conf".
+
+                      If it would be useful to others, please file an issue at
+                      https://github.com/JuliaAudio/PortAudio.jl/issues
+                      with your alsa config directory so we can add it to the search
+                      paths.
+                      """))
+end
+
+function __init__()
+    if Sys.islinux()
+        config_folder = "ALSA_CONFIG_DIR"
+        if config_folder ∉ keys(ENV)
+            ENV[config_folder] =
+                seek_alsa_conf(["/usr/share/alsa", "/usr/local/share/alsa", "/etc/alsa"])
+        end
+
+        plugin_folder = "ALSA_PLUGIN_DIR"
+        if plugin_folder ∉ keys(ENV) && alsa_plugins_jll.is_available()
+            ENV[plugin_folder] = joinpath(alsa_plugins_jll.artifact_dir, "lib", "alsa-lib")
+        end
+    end
+    initialize()
+    atexit() do
+        terminate()
+    end
 end
 
 # This size is in frames
 
-# data is passed to and from portaudio in chunks with this many frames, because
-# we need to interleave the samples
+# data is passed to and from portaudio in chunks with this many frames
 const CHUNKFRAMES = 128
 
 function versioninfo(io::IO = stdout)
-    println(io, unsafe_string(@locked Pa_GetVersionText()))
-    println(io, "Version: ", @locked Pa_GetVersion())
+    println(io, unsafe_string(Pa_GetVersionText()))
+    println(io, "Version: ", Pa_GetVersion())
 end
 
 struct Bounds
@@ -130,24 +147,24 @@ end
 
 struct PortAudioDevice
     name::String
-    hostapi::String
-    defaultsamplerate::Float64
-    idx::PaDeviceIndex
+    host_api::String
+    default_sample_rate::Float64
+    index::PaDeviceIndex
     input_bounds::Bounds
     output_bounds::Bounds
 end
 
-function PortAudioDevice(info::PaDeviceInfo, idx)
+function PortAudioDevice(info::PaDeviceInfo, index)
     PortAudioDevice(
         unsafe_string(info.name),
         unsafe_string(
             safe_load(
-                (@locked Pa_GetHostApiInfo(info.hostApi)),
-                BoundsError(Pa_GetHostApiInfo, idx),
+                (Pa_GetHostApiInfo(info.hostApi)),
+                BoundsError(Pa_GetHostApiInfo, index),
             ).name,
         ),
         info.defaultSampleRate,
-        idx,
+        index,
         Bounds(
             info.maxInputChannels,
             info.defaultLowInputLatency,
@@ -164,45 +181,76 @@ end
 name(device::PortAudioDevice) = device.name
 
 function get_default_input_device()
-    handle_status(@locked Pa_GetDefaultInputDevice())
+    handle_status(Pa_GetDefaultInputDevice())
 end
 
 function get_default_output_device()
-    handle_status(@locked Pa_GetDefaultOutputDevice())
+    handle_status(Pa_GetDefaultOutputDevice())
 end
 
-function get_device_info(i)
-    safe_load((@locked Pa_GetDeviceInfo(i)), BoundsError(Pa_GetDeviceInfo, i))
+function get_device_info(index)
+    safe_load((Pa_GetDeviceInfo(index)), BoundsError(Pa_GetDeviceInfo, index))
 end
 
 function devices()
     [
-        PortAudioDevice(get_device_info(i), i) for
-        i in 0:(handle_status(@locked Pa_GetDeviceCount()) - 1)
+        PortAudioDevice(get_device_info(index), index) for
+        index in 0:(handle_status(Pa_GetDeviceCount()) - 1)
     ]
 end
 
-struct Buffer{T}
+const BUFFER_TYPE{Sample} = Array{Sample, 2}
+# inputs will be a triple of the last 3 arguments to unsafe_read/write
+# we will already have access to the stream itself
+const INPUT_CHANNEL_TYPE{Sample} = Channel{Tuple{BUFFER_TYPE{Sample}, Int, Int}}
+# outputs are the number of frames read/written
+const OUTPUT_CHANNEL_TYPE = Channel{Int}
+
+# a Messanger contains
+# the PortAudio device
+# the PortAudio buffer
+# the number of channels
+# an input channel, for passing inputs to the messanger
+# an output channel for sending outputs from the messanger
+struct Messanger{Sample}
     device::PortAudioDevice
-    chunkbuf::Array{T, 2}
-    nchannels::Int
+    port_audio_buffer::BUFFER_TYPE{Sample}
+    number_of_channels::Int
+    inputs::INPUT_CHANNEL_TYPE{Sample}
+    outputs::OUTPUT_CHANNEL_TYPE
+end
+
+function Messanger{Sample}(device, channels) where {Sample}
+    Messanger(
+        device,
+        zeros(Sample, channels, CHUNKFRAMES),
+        channels,
+        INPUT_CHANNEL_TYPE{Sample}(0),
+        OUTPUT_CHANNEL_TYPE(0),
+    )
+end
+
+nchannels(messanger::Messanger) = messanger.number_of_channels
+name(messanger::Messanger) = name(messanger.device)
+
+function close(messanger::Messanger)
+    close(messanger.inputs)
+    close(messanger.outputs)
 end
 
 #
 # PortAudioStream
 #
 
-struct PortAudioStream{T}
-    samplerate::Float64
-    latency::Float64
-    pointer_ref::Ref{Ptr{PaStream}}
-    warn_xruns::Bool
-    recover_xruns::Bool
-    sink_buffer::Buffer{T}
-    source_buffer::Buffer{T}
+struct PortAudioStream{Sample}
+    sample_rate::Float64
+    pointer_to::Ptr{PaStream}
+    sink_messanger::Messanger{Sample}
+    source_messanger::Messanger{Sample}
 end
 
-const type_to_fmt = Dict{Type, PaSampleFormat}(
+# portaudio uses codes instead of types for the sample format
+const TYPE_TO_FORMAT = Dict{Type, PaSampleFormat}(
     Float32 => 1,
     Int32 => 2,
     # Int24 => 4,
@@ -211,15 +259,20 @@ const type_to_fmt = Dict{Type, PaSampleFormat}(
     UInt8 => 3,
 )
 
-function make_parameters(device, channels, T, latency, host_api_specific_stream_info)
+# we need to convert nothing so it will be handled by C correctly
+convert_nothing(::Nothing) = C_NULL
+convert_nothing(something) = something
+
+function make_parameters(device, channels, Sample, latency, host_api_specific_stream_info)
     if channels == 0
-        Ptr{PaStreamParameters}(0)
+        # if we don't need any channels, we don't need the source/sink at all
+        C_NULL
     else
         Ref(
             PaStreamParameters(
-                device.idx,
+                device.index,
                 channels,
-                type_to_fmt[T],
+                TYPE_TO_FORMAT[Sample],
                 latency,
                 convert_nothing(host_api_specific_stream_info),
             ),
@@ -227,6 +280,8 @@ function make_parameters(device, channels, T, latency, host_api_specific_stream_
     end
 end
 
+# if users pass max as the number of channels, we fill it in for them
+# this is currently undocumented
 function fill_max_channels(channels, bounds)
     if channels === max
         bounds.max_channels
@@ -235,121 +290,241 @@ function fill_max_channels(channels, bounds)
     end
 end
 
-function recover_xrun(stream::PortAudioStream)
-    sink = stream.sink
-    source = stream.source
-    if nchannels(sink) > 0 && nchannels(source) > 0
-        # the best we can do to avoid further xruns is to fill the playback buffer and
-        # discard the capture buffer. Really there's a fundamental problem with our
-        # read/write-based API where you don't know whether we're currently in a state
-        # when the reads and writes should be balanced. In the future we should probably
-        # move to some kind of transaction API that forces them to be balanced, and also
-        # gives a way for the application to signal that the same number of samples
-        # should have been read as written.
-        discard_input(source)
-        prefill_output(sink)
-    end
-end
-
-function defaultlatency(input_device, output_device)
+# worst case scenario
+function get_default_latency(input_device, output_device)
     max(input_device.input_bounds.high_latency, output_device.output_bounds.high_latency)
 end
 
-function combine_default_sample_rates(inchans, sampleratein, outchans, samplerateout)
-    if inchans > 0 && outchans > 0 && sampleratein != samplerateout
+# we can only have one sample rate
+# so if the default sample rates differ, throw an error
+function combine_default_sample_rates(
+    in_channels,
+    sample_rate_in,
+    out_channels,
+    sample_rate_out,
+)
+    if in_channels > 0 && out_channels > 0 && sample_rate_in != sample_rate_out
         error(
             """
-          Can't open duplex stream with mismatched samplerates (in: $sampleratein, out: $samplerateout).
+          Can't open duplex stream with mismatched samplerates (in: $sample_rate_in, out: $sample_rate_out).
           Try changing your sample rate in your driver settings or open separate input and output
           streams.
           """,
         )
-    elseif inchans > 0
-        sampleratein
+    elseif in_channels > 0
+        sample_rate_in
     else
-        samplerateout
+        sample_rate_out
     end
+end
+
+# we will spawn a thread to either read or write to port audio
+# these can be on two separate threads
+# while the reading thread is talking to PortAudio, the writing thread can be setting up
+function start_messanger(
+    a_function,
+    Sample,
+    pointer_to,
+    device,
+    channels;
+    warn_xruns = true,
+)
+    messanger = Messanger{Sample}(device, channels)
+    port_audio_buffer = messanger.port_audio_buffer
+    inputs = messanger.inputs
+    outputs = messanger.outputs
+    @spawn begin
+        while true
+            output = if isopen(inputs)
+                a_function(
+                    pointer_to,
+                    port_audio_buffer,
+                    take!(inputs)...;
+                    warn_xruns = warn_xruns,
+                )
+            else
+                # no frames can be read/read if the input channel is closed
+                0
+            end
+            # check to see if the output channel has closed too
+            if isopen(outputs)
+                put!(outputs, output)
+            else
+                break
+            end
+        end
+    end
+    messanger
+end
+
+# we need to transpose column-major buffer from Julia back and forth between the row-major buffer from PortAudio
+function translate!(
+    julia_buffer,
+    port_audio_buffer,
+    chunk_frames,
+    offset,
+    already,
+    port_audio_to_julia,
+)
+    port_audio_range = 1:chunk_frames
+    # the julia buffer is longer, so we might need to start from the middle
+    julia_view = view(julia_buffer, port_audio_range .+ offset .+ already, :)
+    port_audio_view = view(port_audio_buffer, :, port_audio_range)
+    if port_audio_to_julia
+        transpose!(julia_view, port_audio_view)
+    else
+        transpose!(port_audio_view, julia_view)
+    end
+end
+
+# because we're calling Pa_ReadStream and PA_WriteStream from separate threads,
+# we put a mutex around libportaudio calls
+const PORT_AUDIO_LOCK = ReentrantLock()
+
+function real_write!(
+    pointer_to,
+    port_audio_buffer,
+    julia_buffer,
+    offset,
+    frame_count;
+    warn_xruns = true,
+)
+    already = 0
+    # if we still have frames to write
+    while already < frame_count
+        # take either a whole chunk, or whatever is left if it's smaller
+        chunk_frames = min(frame_count - already, CHUNKFRAMES)
+        # transpose, then send the data
+        translate!(julia_buffer, port_audio_buffer, chunk_frames, offset, already, false)
+        # TODO: if the stream is closed we just want to return a
+        # shorter-than-requested frame count instead of throwing an error
+        handle_status(
+            lock(PORT_AUDIO_LOCK) do
+                Pa_WriteStream(pointer_to, port_audio_buffer, chunk_frames)
+            end,
+            warn_xruns = warn_xruns,
+        )
+        already += chunk_frames
+    end
+    already
+end
+
+function real_read!(
+    pointer_to,
+    port_audio_buffer,
+    julia_buffer,
+    offset,
+    frame_count;
+    warn_xruns = true,
+)
+    already = 0
+    # if we still have frames to write
+    while already < frame_count
+        # take either a whole chunk, or whatever is left if it's smaller
+        chunk_frames = min(frame_count - already, CHUNKFRAMES)
+        # receive the data, then transpose
+        # TODO: if the stream is closed we just want to return a
+        # shorter-than-requested frame count instead of throwing an error
+        # get the data, then transpose
+        handle_status(
+            lock(PORT_AUDIO_LOCK) do
+                Pa_ReadStream(pointer_to, port_audio_buffer, chunk_frames)
+            end;
+            warn_xruns = warn_xruns,
+        )
+        translate!(julia_buffer, port_audio_buffer, chunk_frames, offset, already, true)
+        already += chunk_frames
+    end
+    already
 end
 
 # this is the top-level outer constructor that all the other outer constructors end up calling
 """
-    PortAudioStream(inchannels=2, outchannels=2; options...)
-    PortAudioStream(duplexdevice, inchannels=2, outchannels=2; options...)
-    PortAudioStream(indevice, outdevice, inchannels=2, outchannels=2; options...)
+    PortAudioStream(in_channels = 2, out_channels = 2; options...)
+    PortAudioStream(duplex_device, in_channels = 2, out_channels = 2; options...)
+    PortAudioStream(in_device, out_device, in_channels = 2, out_channels = 2; options...)
 
 Audio devices can either be `PortAudioDevice` instances as returned
 by `PortAudio.devices()`, or strings with the device name as reported by the
-operating system. If a single `duplexdevice` is given it will be used for both
+operating system. If a single `duplex_device` is given it will be used for both
 input and output. If no devices are given the system default devices will be
 used.
 
 Options:
 
-  - `eltype`:         Sample type of the audio stream (defaults to Float32)
-  - `samplerate`:     Sample rate (defaults to device sample rate)
-  - `latency`:        Requested latency. Stream could underrun when too low, consider
+  - `Sample`: Sample type of the audio stream (defaults to Float32)
+  - `sample_rate`: Sample rate (defaults to device sample rate)
+  - `latency`: Requested latency. Stream could underrun when too low, consider
     using provided device defaults
-  - `warn_xruns`:     Display a warning if there is a stream overrun or underrun, which
+  - `warn_xruns`: Display a warning if there is a stream overrun or underrun, which
     often happens when Julia is compiling, or with a particularly large
-    GC run. This can be quite verbose so is false by default.
-  - `recover_xruns`:  Attempt to recover from overruns and underruns by emptying and
-    filling the input and output buffers, respectively. Should result in
-    fewer xruns but could make each xrun more audible. True by default.
+    GC run. This is true by default.
     Only effects duplex streams.
 """
 function PortAudioStream(
-    indev::PortAudioDevice,
-    outdev::PortAudioDevice,
-    inchans = 2,
-    outchans = 2;
-    eltype = Float32,
-    samplerate = combine_default_sample_rates(
-        inchans,
-        indev.defaultsamplerate,
-        outchans,
-        outdev.defaultsamplerate,
+    in_device::PortAudioDevice,
+    out_device::PortAudioDevice,
+    in_channels = 2,
+    out_channels = 2;
+    Sample = Float32,
+    sample_rate = combine_default_sample_rates(
+        in_channels,
+        in_device.default_sample_rate,
+        out_channels,
+        out_device.default_sample_rate,
     ),
-    latency = defaultlatency(indev, outdev),
-    warn_xruns = false,
-    recover_xruns = true,
+    latency = get_default_latency(in_device, out_device),
     frames_per_buffer = 0,
+    # these defaults are currently undocumented
     flags = paNoFlag,
-    callback = nothing,
+    call_back = nothing,
     user_data = nothing,
     input_info = nothing,
     output_info = nothing,
+    warn_xruns = true,
 )
-    inchans = fill_max_channels(inchans, indev.input_bounds)
-    outchans = fill_max_channels(outchans, outdev.output_bounds)
-    pointer_ref = Ref{Ptr{PaStream}}(0)
+    in_channels = fill_max_channels(in_channels, in_device.input_bounds)
+    out_channels = fill_max_channels(out_channels, out_device.output_bounds)
+    # we need a mutable pointer so portaudio can set it for us
+    mutable_pointer = Ref{Ptr{PaStream}}(0)
     handle_status(
-        @locked @stderr_as_debug Pa_OpenStream(
-            pointer_ref,
-            make_parameters(indev, inchans, eltype, latency, input_info),
-            make_parameters(outdev, outchans, eltype, latency, output_info),
-            float(samplerate),
+        Pa_OpenStream(
+            mutable_pointer,
+            make_parameters(in_device, in_channels, Sample, latency, input_info),
+            make_parameters(out_device, out_channels, Sample, latency, output_info),
+            float(sample_rate),
             frames_per_buffer,
             flags,
-            convert_nothing(callback),
+            convert_nothing(call_back),
             convert_nothing(user_data),
-        )
+        ),
     )
-    handle_status(@locked Pa_StartStream(pointer_ref[]))
-    this = PortAudioStream{eltype}(
-        samplerate,
-        latency,
-        pointer_ref,
-        warn_xruns,
-        recover_xruns,
-        Buffer{eltype}(outdev, outchans),
-        Buffer{eltype}(indev, inchans),
+    pointer_to = mutable_pointer[]
+    handle_status(Pa_StartStream(pointer_to))
+    PortAudioStream{Sample}(
+        sample_rate,
+        pointer_to,
+        start_messanger(
+            real_write!,
+            Sample,
+            pointer_to,
+            out_device,
+            out_channels;
+            warn_xruns = warn_xruns,
+        ),
+        start_messanger(
+            real_read!,
+            Sample,
+            pointer_to,
+            in_device,
+            in_channels;
+            warn_xruns = warn_xruns,
+        ),
     )
-    # pre-fill the output stream so we're less likely to underrun
-    prefill_output(this.sink)
-    this
 end
 
 function device_by_name(device_name)
+    # maintain an error message with avaliable devices while we look to save time
     error_message = IOBuffer()
     write(error_message, "No device matching ")
     write(error_message, repr(device_name))
@@ -367,74 +542,81 @@ end
 
 # handle device names given as streams
 function PortAudioStream(
-    indevname::AbstractString,
-    outdevname::AbstractString,
-    args...;
-    kwargs...,
+    in_device_name::AbstractString,
+    out_device_name::AbstractString,
+    arguments...;
+    keywords...,
 )
     PortAudioStream(
-        device_by_name(indevname),
-        device_by_name(outdevname),
-        args...;
-        kwargs...,
+        device_by_name(in_device_name),
+        device_by_name(out_device_name),
+        arguments...;
+        keywords...,
     )
 end
 
-# if one device is given, use it for input and output, but set inchans=0 so we
+# if one device is given, use it for input and output, but set in_channels=0 so we
 # end up with an output-only stream
 function PortAudioStream(
     device::Union{PortAudioDevice, AbstractString},
-    inchans = 0,
-    outchans = 2;
-    kwargs...,
+    in_channels = 0,
+    out_channels = 2;
+    keywords...,
 )
-    PortAudioStream(device, device, inchans, outchans; kwargs...)
+    PortAudioStream(device, device, in_channels, out_channels; keywords...)
 end
 
 # use the default input and output devices
-function PortAudioStream(inchans = 2, outchans = 2; kwargs...)
-    inidx = get_default_input_device()
-    outidx = get_default_output_device()
+function PortAudioStream(in_channels = 2, out_channels = 2; keywords...)
+    in_index = get_default_input_device()
+    out_index = get_default_output_device()
     PortAudioStream(
-        PortAudioDevice(get_device_info(inidx), inidx),
-        PortAudioDevice(get_device_info(outidx), outidx),
-        inchans,
-        outchans;
-        kwargs...,
+        PortAudioDevice(get_device_info(in_index), in_index),
+        PortAudioDevice(get_device_info(out_index), out_index),
+        in_channels,
+        out_channels;
+        keywords...,
     )
 end
 
 # handle do-syntax
-function PortAudioStream(fn::Function, args...; kwargs...)
-    str = PortAudioStream(args...; kwargs...)
+function PortAudioStream(do_function::Function, arguments...; keywords...)
+    stream = PortAudioStream(arguments...; keywords...)
     try
-        fn(str)
+        do_function(stream)
     finally
-        close(str)
+        close(stream)
     end
 end
 
 function close(stream::PortAudioStream)
-    pointer_ref = stream.pointer_ref
-    pointer = pointer_ref[]
-    if pointer != C_NULL
-        handle_status(@locked Pa_StopStream(pointer))
-        handle_status(@locked Pa_CloseStream(pointer))
-        pointer_ref[] = C_NULL
-    end
-    nothing
+    close(stream.sink_messanger)
+    close(stream.source_messanger)
+    pointer_to = stream.pointer_to
+    handle_status(Pa_StopStream(pointer_to))
+    handle_status(Pa_CloseStream(pointer_to))
 end
 
-isopen(stream::PortAudioStream) = stream.pointer_ref[] != C_NULL
+function isopen(pointer_to::Ptr{PaStream})
+    # we aren't actually interested if the stream is stopped or not
+    # instea, we are looking for the error which comes from checking on a closed stream
+    error_number = Pa_IsStreamStopped(pointer_to)
+    if error_number >= 0
+        true
+    else
+        PaErrorCode(error_number) != paBadStreamPtr
+    end
+end
+isopen(stream::PortAudioStream) = isopen(stream.pointer_to)
 
-samplerate(stream::PortAudioStream) = stream.samplerate
-eltype(::Type{PortAudioStream{T}}) where {T} = T
+samplerate(stream::PortAudioStream) = stream.sample_rate
+eltype(::Type{PortAudioStream{Sample}}) where {Sample} = Sample
 
-read(stream::PortAudioStream, args...) = read(stream.source, args...)
-read!(stream::PortAudioStream, args...) = read!(stream.source, args...)
-write(stream::PortAudioStream, args...) = write(stream.sink, args...)
-function write(sink::PortAudioStream, source::PortAudioStream, args...)
-    write(sink.sink, source.source, args...)
+read(stream::PortAudioStream, arguments...) = read(stream.source, arguments...)
+read!(stream::PortAudioStream, arguments...) = read!(stream.source, arguments...)
+write(stream::PortAudioStream, arguments...) = write(stream.sink, arguments...)
+function write(sink::PortAudioStream, source::PortAudioStream, arguments...)
+    write(sink.sink, source.source, arguments...)
 end
 
 function show(io::IO, stream::PortAudioStream)
@@ -457,9 +639,11 @@ end
 #
 
 # Define our source and sink types
+# If we had multiple inheritance, then PortAudioStreams could be both a sink and source
+# Since we don't, we have to make wrappers instead
 for (TypeName, Super) in ((:PortAudioSink, :SampleSink), (:PortAudioSource, :SampleSource))
-    @eval struct $TypeName{T} <: $Super
-        stream::PortAudioStream{T}
+    @eval struct $TypeName{Sample} <: $Super
+        stream::PortAudioStream{Sample}
     end
 end
 
@@ -474,29 +658,29 @@ function getproperty(stream::PortAudioStream, property::Symbol)
     end
 end
 
-function Buffer{T}(device, channels) where {T}
-    # portaudio data comes in interleaved, so we'll end up transposing
-    # it back and forth to julia column-major
-    chunkbuf = zeros(T, channels, CHUNKFRAMES)
-    Buffer(device, chunkbuf, channels)
+function nchannels(source_or_sink::PortAudioSource)
+    nchannels(source_or_sink.stream.source_messanger)
 end
-
-nchannels(buffer::Buffer) = buffer.nchannels
-name(buffer::Buffer) = name(buffer.device)
-
-nchannels(s::PortAudioSource) = nchannels(s.stream.source_buffer)
-nchannels(s::PortAudioSink) = nchannels(s.stream.sink_buffer)
-samplerate(s::Union{PortAudioSink, PortAudioSource}) = samplerate(s.stream)
-eltype(::Type{<:Union{PortAudioSink{T}, PortAudioSource{T}}}) where {T} = T
+nchannels(source_or_sink::PortAudioSink) = nchannels(source_or_sink.stream.sink_messanger)
+function samplerate(source_or_sink::Union{PortAudioSink, PortAudioSource})
+    samplerate(source_or_sink.stream)
+end
+function eltype(
+    ::Type{<:Union{PortAudioSink{Sample}, PortAudioSource{Sample}}},
+) where {Sample}
+    Sample
+end
 function close(::Union{PortAudioSink, PortAudioSource})
     throw(ErrorException("""
         Attempted to close PortAudioSink or PortAudioSource.
         Close the containing PortAudioStream instead
         """))
 end
-isopen(s::Union{PortAudioSink, PortAudioSource}) = isopen(s.stream)
-name(s::PortAudioSink) = name(s.stream.sink_buffer)
-name(s::PortAudioSource) = name(s.stream.source_buffer)
+function isopen(source_or_sink::Union{PortAudioSink, PortAudioSource})
+    isopen(source_or_sink.stream)
+end
+name(source_or_sink::PortAudioSink) = name(source_or_sink.stream.sink_messanger)
+name(source_or_sink::PortAudioSource) = name(source_or_sink.stream.source_messanger)
 
 kind(::PortAudioSink) = "sink"
 kind(::PortAudioSource) = "source"
@@ -511,175 +695,27 @@ function show(io::IO, sink_or_source::Union{PortAudioSink, PortAudioSource})
     )
 end
 
-function interleave!(long, wide, n, already, offset, wide_to_long)
-    long_view = view(long, (1:n) .+ already .+ offset, :)
-    wide_view = view(wide, :, 1:n)
-    if wide_to_long
-        transpose!(long_view, wide_view)
-    else
-        transpose!(wide_view, long_view)
-    end
-end
-
-function handle_xrun(stream, error_number, recover_xruns)
-    if recover_xruns && is_xrun(PaErrorCode(error_number))
-        recover_xrun(stream)
-    end
-end
-
-function write_stream(stream::Ptr{PaStream}, buf::Array, frames::Integer; warn_xruns = true)
-    handle_status(
-        disable_sigint() do
-            @tcall @locked Pa_WriteStream(stream, buf, frames)
-        end,
-        warn_xruns = warn_xruns,
-    )
-end
-
-function unsafe_write(sink::PortAudioSink, buf::Array, frameoffset, framecount)
-    stream = sink.stream
-    pointer = stream.pointer_ref[]
-    chunkbuf = stream.sink_buffer.chunkbuf
-    warn_xruns = stream.warn_xruns
-    recover_xruns = stream.recover_xruns
-    nwritten = 0
-    while nwritten < framecount
-        n = min(framecount - nwritten, CHUNKFRAMES)
-        # make a buffer of interleaved samples
-        interleave!(buf, chunkbuf, n, nwritten, frameoffset, false)
-        # TODO: if the stream is closed we just want to return a
-        # shorter-than-requested frame count instead of throwing an error
-        handle_xrun(
-            stream,
-            write_stream(pointer, chunkbuf, n, warn_xruns = warn_xruns),
-            recover_xruns,
-        )
-        nwritten += n
-    end
-
-    nwritten
-end
-
-function read_stream(stream::Ptr{PaStream}, buf::Array, frames::Integer; warn_xruns = true)
-    # without disable_sigint I get a segfault with the error:
-    # "error thrown and no exception handler available."
-    # if the user tries to ctrl-C. Note I've still had some crash problems with
-    # ctrl-C within `pasuspend`, so for now I think either don't use `pasuspend` or
-    # don't use ctrl-C.
-    handle_status(
-        disable_sigint() do
-            @tcall @locked Pa_ReadStream(stream, buf, frames)
-        end,
-        warn_xruns = warn_xruns,
-    )
-end
-
-function unsafe_read!(source::PortAudioSource, buf::Array, frameoffset, framecount)
-    stream = source.stream
-    pointer = stream.pointer_ref[]
-    chunkbuf = stream.source_buffer.chunkbuf
-    warn_xruns = stream.warn_xruns
-    recover_xruns = stream.recover_xruns
-    nread = 0
-    while nread < framecount
-        n = min(framecount - nread, CHUNKFRAMES)
-        # TODO: if the stream is closed we just want to return a
-        # shorter-than-requested frame count instead of throwing an error
-        handle_xrun(
-            stream,
-            read_stream(pointer, chunkbuf, n, warn_xruns = warn_xruns),
-            recover_xruns,
-        )
-        # de-interleave the samples
-        interleave!(buf, chunkbuf, n, nread, frameoffset, true)
-        nread += n
-    end
-
-    nread
-end
-
-"""
-    prefill_output(sink::PortAudioSink)
-
-Fill the playback buffer of the given sink.
-"""
-function prefill_output(sink::PortAudioSink)
-    if nchannels(sink) > 0
-        stream = sink.stream
-        pointer = stream.pointer_ref[]
-        chunkbuf = stream.sink_buffer.chunkbuf
-        towrite = handle_status(@locked Pa_GetStreamWriteAvailable(pointer))
-        while towrite > 0
-            n = min(towrite, CHUNKFRAMES)
-            fill!(chunkbuf, zero(eltype(chunkbuf)))
-            write_stream(pointer, chunkbuf, n, warn_xruns = false)
-            towrite -= n
+# both reading and writing will outsource to the reading and writing demons
+# so we just need to pass inputs in and take outputs out
+function exchange(messanger, arguments...)
+    inputs = messanger.inputs
+    if isopen(inputs)
+        put!(inputs, arguments)
+        outputs = messanger.outputs
+        if isopen(outputs)
+            return take!(outputs)
         end
     end
+    # if either the input or output channel is closed, no frames can be read or written
+    0
 end
 
-"""
-    discard_input(source::PortAudioSource)
-
-Read and discard data from the capture buffer.
-"""
-function discard_input(source::PortAudioSource)
-    stream = source.stream
-    pointer = stream.pointer_ref[]
-    chunkbuf = stream.source_buffer.chunkbuf
-    toread = handle_status(@locked Pa_GetStreamReadAvailable(pointer))
-    while toread > 0
-        n = min(toread, CHUNKFRAMES)
-        read_stream(pointer, chunkbuf, n, warn_xruns = false)
-        toread -= n
-    end
+function unsafe_write(sink::PortAudioSink, julia_buffer::Array, offset, frame_count)
+    exchange(sink.stream.sink_messanger, julia_buffer, offset, frame_count)
 end
 
-function seek_alsa_conf(searchdirs)
-    confdir_idx = findfirst(searchdirs) do d
-        isfile(joinpath(d, "alsa.conf"))
-    end
-    if confdir_idx === nothing
-        throw(
-            ErrorException("""
-                           Could not find ALSA config directory. Searched:
-                           $(join(searchdirs, "\n"))
-
-                           If ALSA is installed, set the "ALSA_CONFIG_DIR" environment
-                           variable. The given directory should have a file "alsa.conf".
-
-                           If it would be useful to others, please file an issue at
-                           https://github.com/JuliaAudio/PortAudio.jl/issues
-                           with your alsa config directory so we can add it to the search
-                           paths.
-                           """),
-        )
-    end
-    searchdirs[confdir_idx]
-end
-
-function __init__()
-    if Sys.islinux()
-        envkey = "ALSA_CONFIG_DIR"
-        if envkey ∉ keys(ENV)
-            ENV[envkey] =
-                seek_alsa_conf(["/usr/share/alsa", "/usr/local/share/alsa", "/etc/alsa"])
-        end
-
-        plugin_key = "ALSA_PLUGIN_DIR"
-        if plugin_key ∉ keys(ENV) && alsa_plugins_jll.is_available()
-            ENV[plugin_key] = joinpath(alsa_plugins_jll.artifact_dir, "lib", "alsa-lib")
-        end
-    end
-    # initialize PortAudio on module load. libportaudio prints a bunch of
-    # junk to STDOUT on initialization, so we swallow it.
-    # TODO: actually check the junk to make sure there's nothing in there we
-    # don't expect
-    initialize()
-
-    atexit() do
-        terminate()
-    end
+function unsafe_read!(source::PortAudioSource, julia_buffer::Array, offset, frame_count)
+    exchange(source.stream.source_messanger, julia_buffer, offset, frame_count)
 end
 
 end # module PortAudio
