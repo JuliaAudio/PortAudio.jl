@@ -74,7 +74,7 @@ function handle_status(error_number; warn_xruns = true)
     if error_number < 0
         error_code = PaErrorCode(error_number)
         if error_code == paOutputUnderflowed || error_code == paInputOverflowed
-            # warn instead of error after an warn_xrun
+            # warn instead of error after an xrun
             # allow users to disable these warnings
             if warn_xruns
                 @warn("libportaudio: " * get_error_text(error_number))
@@ -87,7 +87,7 @@ function handle_status(error_number; warn_xruns = true)
 end
 
 function initialize()
-    # ALSA will throw extraneous warnings on start up
+    # ALSA will throw extraneous warnings on start-up
     # send them to debug instead
     debug_message = @capture_err handle_status(Pa_Initialize())
     @debug debug_message
@@ -126,10 +126,8 @@ function __init__()
     end
 end
 
-# This size is in frames
-
 # data is passed to and from portaudio in chunks with this many frames
-const CHUNKFRAMES = 128
+const CHUNK_FRAMES = 128
 
 function versioninfo(io::IO = stdout)
     println(io, unsafe_string(Pa_GetVersionText()))
@@ -190,7 +188,6 @@ function get_device_info(index::Integer)
 end
 
 function get_device_info(device_name::AbstractString)
-    # maintain an error message with avaliable devices while we look to save time
     for device in devices()
         potential_match = name(device)
         if potential_match == device_name
@@ -203,7 +200,8 @@ end
 function devices()
     [
         PortAudioDevice(get_device_info(index), index) for
-        index in 0:(handle_status(Pa_GetDeviceCount()) - 1)
+        # 0 indexing for C
+        index in (1:handle_status(Pa_GetDeviceCount())) .- 1
     ]
 end
 
@@ -231,7 +229,7 @@ end
 function Messanger{Sample}(device, channels) where {Sample}
     Messanger(
         device,
-        zeros(Sample, channels, CHUNKFRAMES),
+        zeros(Sample, channels, CHUNK_FRAMES),
         channels,
         INPUT_CHANNEL_TYPE{Sample}(0),
         OUTPUT_CHANNEL_TYPE(0),
@@ -374,8 +372,31 @@ function get_default_sample_rates(
     )
 end
 
-# we will spawn a thread to either read or write to port audio
-# these can be on two separate threads
+function run_messanger(
+    a_function,
+    pointer_to,
+    port_audio_buffer,
+    inputs,
+    outputs;
+    warn_xruns = true,
+)
+    while true
+        output = if isopen(inputs)
+            a_function(pointer_to, port_audio_buffer, take!(inputs)...; warn_xruns = warn_xruns)
+        else
+            # no frames can be read/written if the input channel is closed
+            0
+        end
+        # check to see if the output channel has closed too
+        if isopen(outputs)
+            put!(outputs, output)
+        else
+            break
+        end
+    end
+end
+
+# we will spawn new threads to read from and write to to port audio
 # while the reading thread is talking to PortAudio, the writing thread can be setting up
 function start_messanger(
     a_function,
@@ -389,27 +410,14 @@ function start_messanger(
     port_audio_buffer = messanger.port_audio_buffer
     inputs = messanger.inputs
     outputs = messanger.outputs
-    @spawn begin
-        while true
-            output = if isopen(inputs)
-                a_function(
-                    pointer_to,
-                    port_audio_buffer,
-                    take!(inputs)...;
-                    warn_xruns = warn_xruns,
-                )
-            else
-                # no frames can be read/read if the input channel is closed
-                0
-            end
-            # check to see if the output channel has closed too
-            if isopen(outputs)
-                put!(outputs, output)
-            else
-                break
-            end
-        end
-    end
+    @spawn run_messanger(
+        a_function,
+        pointer_to,
+        port_audio_buffer,
+        inputs,
+        outputs;
+        warn_xruns = warn_xruns,
+    )
     messanger
 end
 
@@ -433,8 +441,8 @@ function translate!(
     end
 end
 
-# because we're calling Pa_ReadStream and PA_WriteStream from separate threads,
-# we put a mutex around libportaudio calls
+# because we're calling Pa_ReadStream and Pa_WriteStream from separate threads,
+# we put a lock around these calls
 const PORT_AUDIO_LOCK = ReentrantLock()
 
 function real_write!(
@@ -449,7 +457,7 @@ function real_write!(
     # if we still have frames to write
     while already < frame_count
         # take either a whole chunk, or whatever is left if it's smaller
-        chunk_frames = min(frame_count - already, CHUNKFRAMES)
+        chunk_frames = min(frame_count - already, CHUNK_FRAMES)
         # transpose, then send the data
         translate!(julia_buffer, port_audio_buffer, chunk_frames, offset, already, false)
         # TODO: if the stream is closed we just want to return a
@@ -477,7 +485,7 @@ function real_read!(
     # if we still have frames to write
     while already < frame_count
         # take either a whole chunk, or whatever is left if it's smaller
-        chunk_frames = min(frame_count - already, CHUNKFRAMES)
+        chunk_frames = min(frame_count - already, CHUNK_FRAMES)
         # receive the data, then transpose
         # TODO: if the stream is closed we just want to return a
         # shorter-than-requested frame count instead of throwing an error
@@ -535,14 +543,14 @@ function PortAudioStream(
         output_channels,
         output_device,
     ),
-    frames_per_buffer = 0,
+    warn_xruns = true,
     # these defaults are currently undocumented
+    frames_per_buffer = 0,
     flags = paNoFlag,
     call_back = nothing,
     user_data = nothing,
     input_info = nothing,
     output_info = nothing,
-    warn_xruns = true,
 )
     input_channels_filled, output_channels_filled =
         fill_both_channels(input_channels, input_device, output_channels, output_device)
@@ -648,6 +656,7 @@ function close(stream::PortAudioStream)
     close(stream.sink_messanger)
     close(stream.source_messanger)
     pointer_to = stream.pointer_to
+    # only stop if it's not arlready stopped
     if !Bool(handle_status(Pa_IsStreamStopped(pointer_to)))
         handle_status(Pa_StopStream(pointer_to))
     end

@@ -51,7 +51,7 @@ using PortAudio.LibPortAudio:
     PaStreamInfo,
     PaStreamParameters,
     PaVersionInfo
-using SampledSignals: nchannels, s, SampleBuf, samplerate, SinSourc
+using SampledSignals: nchannels, s, SampleBuf, samplerate, SinSource
 using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
 
 @testset "Tests without sound" begin
@@ -72,7 +72,8 @@ using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
         @test handle_status(Pa_GetDefaultHostApi()) >= 0
         # version info not available on windows?
         if !Sys.iswindows()
-            @test safe_load(Pa_GetVersionInfo(),ErrorException("no info")) isa PaVersionInfo
+            @test safe_load(Pa_GetVersionInfo(), ErrorException("no info")) isa
+                  PaVersionInfo
         end
         @test safe_load(Pa_GetLastHostErrorInfo(), ErrorException("no info")) isa
               PaHostErrorInfo
@@ -83,10 +84,13 @@ using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
     end
 
     @testset "Errors without sound" begin
-        @test_throws ArgumentError("Default input and output sample rates disagree") combine_default_sample_rates(0, 1)
+        @test_throws ArgumentError("Default input and output sample rates disagree") combine_default_sample_rates(
+            0,
+            1,
+        )
         wrong = "foobarbaz"
-        @test sprint(showerror, PortAudioException(paNotInitialized)) == 
-            "PortAudioException: PortAudio not initialized"
+        @test sprint(showerror, PortAudioException(paNotInitialized)) ==
+              "PortAudioException: PortAudio not initialized"
         @test_throws KeyError(wrong) get_device_info(wrong)
         @test_throws BoundsError(Pa_GetDeviceInfo, -1) get_device_info(-1)
         @test_throws ArgumentError("Could not find ALSA config") seek_alsa_conf([])
@@ -94,7 +98,7 @@ using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
             PaError(paOutputUnderflowed),
         )
         @test_throws PortAudioException(paNotInitialized) handle_status(
-            PaError(paNotInitialized)
+            PaError(paNotInitialized),
         )
         Pa_Sleep(1)
         @test Pa_GetSampleSize(paFloat32) == 4
@@ -106,7 +110,7 @@ if !isempty(devices())
     terminate()
     initialize()
 
-    # these default values are specific to my machines
+    # these default values are specific to local machines
     input_index = get_default_input_device()
     default_input_device = PortAudioDevice(get_device_info(input_index), input_index).name
     output_index = get_default_output_device()
@@ -160,7 +164,7 @@ if !isempty(devices())
             end
         end
         @testset "Open Device by name" begin
-            PortAudioStream(default_input_device, default_output_device) do stream               
+            PortAudioStream(default_input_device, default_output_device) do stream
             end
         end
         # no way to check that the right data is actually getting read or written here,
@@ -198,12 +202,18 @@ if !isempty(devices())
             end
         end
         @testset "Errors with sound" begin
-            @test_throws DomainError(typemax(Int), "max channels exceeded") PortAudioStream(typemax(Int), 0)
-            @test_throws ArgumentError("Input or output must have at least 1 channel") PortAudioStream(0, 0)
+            @test_throws DomainError(typemax(Int), "max channels exceeded") PortAudioStream(
+                typemax(Int),
+                0,
+            )
+            @test_throws ArgumentError("Input or output must have at least 1 channel") PortAudioStream(
+                0,
+                0,
+            )
         end
         @testset "libportaudio with sound" begin
             @test PaErrorCode(Pa_HostApiTypeIdToHostApiIndex(paInDevelopment)) ==
-              paHostApiNotFound
+                  paHostApiNotFound
             @test Pa_HostApiDeviceIndexToDeviceIndex(paInDevelopment, 0) == 0
             stream = PortAudioStream(2, 2)
             pointer_to = stream.pointer_to
