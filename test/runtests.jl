@@ -8,6 +8,7 @@ using PortAudio:
     get_device_info,
     handle_status,
     initialize,
+    PortAudioException,
     PortAudio,
     PortAudioDevice,
     PortAudioStream,
@@ -20,6 +21,7 @@ using PortAudio.LibPortAudio:
     PaErrorCode,
     paFloat32,
     Pa_GetDefaultHostApi,
+    Pa_GetDeviceInfo,
     Pa_GetHostApiCount,
     Pa_GetLastHostErrorInfo,
     Pa_GetSampleSize,
@@ -47,7 +49,7 @@ using PortAudio.LibPortAudio:
 using SampledSignals: nchannels, s, SampleBuf, samplerate, SinSource
 using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
 
-@testset "PortAudio Tests" begin
+@testset "Tests without sound" begin
     @testset "Reports version" begin
         io = IOBuffer()
         PortAudio.versioninfo(io)
@@ -60,17 +62,7 @@ using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
         devices()
     end
 
-    @testset "Null errors" begin
-        @test_throws BoundsError get_device_info(-1)
-    end
-end
-
-if !isempty(devices())
-    # make sure we can terminate, then reinitialize
-    terminate()
-    initialize()
-
-    @testset "libportaudio" begin
+    @testset "libortaudio without sound" begin
         @test handle_status(Pa_GetHostApiCount()) >= 0
         @test handle_status(Pa_GetDefaultHostApi()) >= 0
         @test PaErrorCode(Pa_HostApiTypeIdToHostApiIndex(paInDevelopment)) ==
@@ -82,54 +74,60 @@ if !isempty(devices())
         @test PaErrorCode(
             Pa_OpenDefaultStream(Ref(C_NULL), 0, 0, paFloat32, 0.0, 0, C_NULL, C_NULL),
         ) == paInvalidDevice
-        stream = PortAudioStream(2, 2)
-        pointer_to = stream.pointer_to
-        @test Bool(handle_status(Pa_IsStreamActive(pointer_to)))
-        @test safe_load(Pa_GetStreamInfo(pointer_to), ErrorException("no info")) isa
-              PaStreamInfo
-        @test Pa_GetStreamTime(pointer_to) >= 0
-        @test Pa_GetStreamCpuLoad(pointer_to) >= 0
-        @test PaErrorCode(handle_status(Pa_AbortStream(pointer_to))) == paNoError
-        @test PaErrorCode(
-            handle_status(Pa_SetStreamFinishedCallback(pointer_to, C_NULL)),
-        ) == paNoError
+    end
+
+    @testset "Errors without sound" begin
+        wrong = "foobarbaz"
+        @test_throws KeyError(wrong) get_device_info(wrong)
+        @test_throws BoundsError(Pa_GetDeviceInfo, -1) get_device_info(-1)
+        @test_throws ArgumentError("Could not find ALSA config") seek_alsa_conf([])
+        @test_logs (:warn, "libportaudio: Output underflowed") handle_status(
+            PaError(paOutputUnderflowed),
+        )
+        @test_throws PortAudioException(paNotInitialized) handle_status(
+            PaError(paNotInitialized)
+        )
         Pa_Sleep(1)
         @test Pa_GetSampleSize(paFloat32) == 4
     end
+end
+
+if !isempty(devices())
+    # make sure we can terminate, then reinitialize
+    terminate()
+    initialize()
 
     # these default values are specific to my machines
-    inidx = get_default_input_device()
-    default_indev = PortAudioDevice(get_device_info(inidx), inidx).name
-    outidx = get_default_output_device()
-    default_outdev = PortAudioDevice(get_device_info(outidx), outidx).name
+    input_index = get_default_input_device()
+    default_input_device = PortAudioDevice(get_device_info(input_index), input_index).name
+    output_index = get_default_output_device()
+    default_output_device =
+        PortAudioDevice(get_device_info(output_index), output_index).name
 
-    @testset "Local Tests" begin
-        @testset "Open Default Device" begin
+    @testset "Tests with sound" begin
+        @testset "Interactive tests" begin
             println("Recording...")
             stream = PortAudioStream(2, 0)
-            buf = read(stream, 5s)
-            close(stream)
-            @test size(buf) ==
+            buffer = read(stream, 5s)
+            @test size(buffer) ==
                   (round(Int, 5 * samplerate(stream)), nchannels(stream.source))
+            close(stream)
             println("Playing back recording...")
             PortAudioStream(0, 2) do stream
-                write(stream, buf)
+                write(stream, buffer)
             end
             println("Testing pass-through")
             stream = PortAudioStream(2, 2)
             sink = stream.sink
             source = stream.source
-            @test sprint(show, sink) == "2 channel sink: $(repr(default_indev))"
-            @test sprint(show, source) == "2 channel source: $(repr(default_outdev))"
+            @test sprint(show, stream) == """
+                PortAudioStream{Float32}
+                  Samplerate: 44100.0Hz
+                  2 channel sink: $(repr(default_output_device))
+                  2 channel source: $(repr(default_input_device))"""
+            @test sprint(show, sink) == "2 channel sink: $(repr(default_input_device))"
+            @test sprint(show, source) == "2 channel source: $(repr(default_output_device))"
             write(stream, stream, 5s)
-            @test_throws ErrorException("""
-                Attempted to close PortAudioSink or PortAudioSource.
-                Close the containing PortAudioStream instead
-                """) close(sink)
-            @test_throws ErrorException("""
-                Attempted to close PortAudioSink or PortAudioSource.
-                Close the containing PortAudioStream instead
-                """) close(source)
             close(stream)
             @test !isopen(stream)
             @test !isopen(sink)
@@ -137,91 +135,65 @@ if !isempty(devices())
             println("done")
         end
         @testset "Samplerate-converting writing" begin
-            stream = PortAudioStream(0, 2)
-            write(
-                stream,
-                SinSource(eltype(stream), samplerate(stream) * 0.8, [220, 330]),
-                3s,
-            )
-            write(
-                stream,
-                SinSource(eltype(stream), samplerate(stream) * 1.2, [220, 330]),
-                3s,
-            )
-            close(stream)
+            PortAudioStream(0, 2) do stream
+                write(
+                    stream,
+                    SinSource(eltype(stream), samplerate(stream) * 0.8, [220, 330]),
+                    3s,
+                )
+                write(
+                    stream,
+                    SinSource(eltype(stream), samplerate(stream) * 1.2, [220, 330]),
+                    3s,
+                )
+            end
         end
         @testset "Open Device by name" begin
-            stream = PortAudioStream(default_indev, default_outdev)
-            buf = read(stream, 0.001s)
-            @test size(buf) ==
-                  (round(Int, 0.001 * samplerate(stream)), nchannels(stream.source))
-            write(stream, buf)
-            io = IOBuffer()
-            show(io, stream)
-            @test occursin(
-                """
- PortAudioStream{Float32}
-   Samplerate: 44100.0Hz
-   2 channel sink: $(repr(default_outdev))
-   2 channel source: $(repr(default_indev))""",
-                String(take!(io)),
-            )
-            close(stream)
-        end
-        @testset "Error handling" begin
-            @test_throws ErrorException PortAudioStream("foobarbaz")
-            @test_throws ErrorException PortAudioStream(default_indev, "foobarbaz")
-            @test_logs (:warn, "libportaudio: Output underflowed") handle_status(
-                PaError(paOutputUnderflowed),
-            )
-            @test_throws ErrorException("libportaudio: PortAudio not initialized") handle_status(
-                PaError(paNotInitialized),
-            )
-            @test_throws ErrorException("""
-                Could not find ALSA config directory. Searched:
-
-
-                If ALSA is installed, set the "ALSA_CONFIG_DIR" environment
-                variable. The given directory should have a file "alsa.conf".
-
-                If it would be useful to others, please file an issue at
-                https://github.com/JuliaAudio/PortAudio.jl/issues
-                with your alsa config directory so we can add it to the search
-                paths.
-                """) seek_alsa_conf([])
-            @test_throws ErrorException(
-                """
-Can't open duplex stream with mismatched samplerates (in: 0, out: 1).
-Try changing your sample rate in your driver settings or open separate input and output
-streams.
-""",
-            ) combine_default_sample_rates(1, 0, 1, 1)
+            PortAudioStream(default_input_device, default_output_device) do stream               
+            end
         end
         # no way to check that the right data is actually getting read or written here,
         # but at least it's not crashing.
         @testset "Queued Writing" begin
-            stream = PortAudioStream(0, 2)
-            buf = SampleBuf(
-                rand(eltype(stream), 48000, nchannels(stream.sink)) * 0.1,
-                samplerate(stream),
-            )
-            t1 = @async write(stream, buf)
-            t2 = @async write(stream, buf)
-            @test fetch(t1) == 48000
-            @test fetch(t2) == 48000
-            close(stream)
+            PortAudioStream(0, 2) do stream
+                buffer = SampleBuf(
+                    rand(eltype(stream), 48000, nchannels(stream.sink)) * 0.1,
+                    samplerate(stream),
+                )
+                frame_count_1 = @async write(stream, buffer)
+                frame_count_2 = @async write(stream, buffer)
+                @test fetch(frame_count_1) == 48000
+                @test fetch(frame_count_2) == 48000
+            end
         end
         @testset "Queued Reading" begin
-            stream = PortAudioStream(2, 0)
-            buf = SampleBuf(
-                rand(eltype(stream), 48000, nchannels(stream.source)) * 0.1,
-                samplerate(stream),
-            )
-            t1 = @async read!(stream, buf)
-            t2 = @async read!(stream, buf)
-            @test fetch(t1) == 48000
-            @test fetch(t2) == 48000
-            close(stream)
+            PortAudioStream(2, 0) do stream
+                buffer = SampleBuf(
+                    rand(eltype(stream), 48000, nchannels(stream.source)) * 0.1,
+                    samplerate(stream),
+                )
+                frame_count_1 = @async read!(stream, buffer)
+                frame_count_2 = @async read!(stream, buffer)
+                @test fetch(frame_count_1) == 48000
+                @test fetch(frame_count_2) == 48000
+            end
+        end
+        @testset "Errors with sound" begin
+            @test_throws DomainError(typemax(Int), "max channels exceeded") PortAudioStream(typemax(Int), 0)
+            @test_throws ArgumentError("Input or output must have at least 1 channel") PortAudioStream(0, 0)
+        end
+        @testset "libportaudio with sound" begin
+            stream = PortAudioStream(2, 2)
+            pointer_to = stream.pointer_to
+            @test Bool(handle_status(Pa_IsStreamActive(pointer_to)))
+            @test safe_load(Pa_GetStreamInfo(pointer_to), ErrorException("no info")) isa
+                  PaStreamInfo
+            @test Pa_GetStreamTime(pointer_to) >= 0
+            @test Pa_GetStreamCpuLoad(pointer_to) >= 0
+            @test PaErrorCode(handle_status(Pa_AbortStream(pointer_to))) == paNoError
+            @test PaErrorCode(
+                handle_status(Pa_SetStreamFinishedCallback(pointer_to, C_NULL)),
+            ) == paNoError
         end
     end
 end

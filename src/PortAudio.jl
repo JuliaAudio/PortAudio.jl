@@ -1,7 +1,7 @@
 module PortAudio
 
 using alsa_plugins_jll: alsa_plugins_jll
-import Base: close, eltype, getproperty, isopen, read, read!, show, write
+import Base: close, eltype, getproperty, isopen, read, read!, show, showerror, write
 using Base.Threads: @spawn
 using libportaudio_jll: libportaudio
 using LinearAlgebra: transpose!
@@ -60,6 +60,14 @@ function get_error_text(error_number)
     unsafe_string(Pa_GetErrorText(error_number))
 end
 
+struct PortAudioException <: Exception
+    code::PaErrorCode
+end
+function showerror(io::IO, exception::PortAudioException)
+    print(io, "PortAudioException: ")
+    print(io, get_error_text(PaError(exception.code)))
+end
+
 # for integer results, PortAudio will return a negative number instead of erroring
 # so we need to handle these errors
 function handle_status(error_number; warn_xruns = true)
@@ -72,7 +80,7 @@ function handle_status(error_number; warn_xruns = true)
                 @warn("libportaudio: " * get_error_text(error_number))
             end
         else
-            throw(ErrorException("libportaudio: " * get_error_text(error_number)))
+            throw(PortAudioException(error_code))
         end
     end
     error_number
@@ -96,18 +104,7 @@ function seek_alsa_conf(folders)
             return folder
         end
     end
-    throw(ErrorException("""
-                      Could not find ALSA config directory. Searched:
-                      $(join(folders, "\n"))
-
-                      If ALSA is installed, set the "ALSA_CONFIG_DIR" environment
-                      variable. The given directory should have a file "alsa.conf".
-
-                      If it would be useful to others, please file an issue at
-                      https://github.com/JuliaAudio/PortAudio.jl/issues
-                      with your alsa config directory so we can add it to the search
-                      paths.
-                      """))
+    throw(ArgumentError("Could not find ALSA config"))
 end
 
 function __init__()
@@ -188,8 +185,19 @@ function get_default_output_device()
     handle_status(Pa_GetDefaultOutputDevice())
 end
 
-function get_device_info(index)
+function get_device_info(index::Integer)
     safe_load((Pa_GetDeviceInfo(index)), BoundsError(Pa_GetDeviceInfo, index))
+end
+
+function get_device_info(device_name::AbstractString)
+    # maintain an error message with avaliable devices while we look to save time
+    for device in devices()
+        potential_match = name(device)
+        if potential_match == device_name
+            return device
+        end
+    end
+    throw(KeyError(device_name))
 end
 
 function devices()
@@ -283,38 +291,83 @@ end
 # if users pass max as the number of channels, we fill it in for them
 # this is currently undocumented
 function fill_max_channels(channels, bounds)
+    max_channels = bounds.max_channels
     if channels === max
-        bounds.max_channels
+        max_channels
+    elseif channels > max_channels
+        throw(DomainError(channels, "max channels exceeded"))
     else
         channels
     end
 end
 
+const AT_LEAST_ONE = ArgumentError("Input or output must have at least 1 channel")
+
+function fill_both_channels(input_channels, input_device, output_channels, output_device)
+    input_channels_filled = fill_max_channels(input_channels, input_device.input_bounds)
+    output_channels_filled = fill_max_channels(output_channels, output_device.output_bounds)
+    if input_channels_filled == 0 && output_channels_filled == 0
+        throw(AT_LEAST_ONE)
+    else
+        input_channels_filled, output_channels_filled
+    end
+end
+
+function input_output_or_both(
+    combine_function,
+    input_channels_filled,
+    output_channels_filled,
+    input,
+    output,
+)
+    if input_channels_filled > 0
+        if output_channels_filled > 0
+            combine_function(input, output)
+        else
+            input
+        end
+    else
+        if output_channels_filled > 0
+            output
+        else
+            throw(AT_LEAST_ONE)
+        end
+    end
+end
+
 # worst case scenario
-function get_default_latency(input_device, output_device)
-    max(input_device.input_bounds.high_latency, output_device.output_bounds.high_latency)
+function get_default_latency(input_channels, input_device, output_channels, output_device)
+    input_channels_filled, output_channels_filled =
+        fill_both_channels(input_channels, input_device, output_channels, output_device)
+    input_output_or_both(
+        max,
+        input_channels_filled,
+        output_channels_filled,
+        input_device.input_bounds.high_latency,
+        output_device.output_bounds.high_latency,
+    )
 end
 
 # we can only have one sample rate
 # so if the default sample rates differ, throw an error
 function combine_default_sample_rates(
-    in_channels,
-    sample_rate_in,
-    out_channels,
-    sample_rate_out,
+    input_channels,
+    input_device,
+    output_channels,
+    output_device,
 )
-    if in_channels > 0 && out_channels > 0 && sample_rate_in != sample_rate_out
-        error(
-            """
-          Can't open duplex stream with mismatched samplerates (in: $sample_rate_in, out: $sample_rate_out).
-          Try changing your sample rate in your driver settings or open separate input and output
-          streams.
-          """,
-        )
-    elseif in_channels > 0
-        sample_rate_in
-    else
-        sample_rate_out
+    input_channels_filled, output_channels_filled =
+        fill_both_channels(input_channels, input_device, output_channels, output_device)
+    input_output_or_both(
+        input_channels_filled,
+        output_channels_filled,
+        input_device.default_sample_rate,
+        output_device.default_sample_rate,
+    ) do input_sample_rate, output_sample_rate
+        if input_sample_rate != output_sample_rate
+            throw(ArgumentError("Default input and output sample rates disagree"))
+        end
+        input_sample_rate
     end
 end
 
@@ -440,9 +493,9 @@ end
 
 # this is the top-level outer constructor that all the other outer constructors end up calling
 """
-    PortAudioStream(in_channels = 2, out_channels = 2; options...)
-    PortAudioStream(duplex_device, in_channels = 2, out_channels = 2; options...)
-    PortAudioStream(in_device, out_device, in_channels = 2, out_channels = 2; options...)
+    PortAudioStream(input_channels = 2, output_channels = 2; options...)
+    PortAudioStream(duplex_device, input_channels = 2, output_channels = 2; options...)
+    PortAudioStream(input_device, output_device, input_channels = 2, output_channels = 2; options...)
 
 Audio devices can either be `PortAudioDevice` instances as returned
 by `PortAudio.devices()`, or strings with the device name as reported by the
@@ -462,18 +515,23 @@ Options:
     Only effects duplex streams.
 """
 function PortAudioStream(
-    in_device::PortAudioDevice,
-    out_device::PortAudioDevice,
-    in_channels = 2,
-    out_channels = 2;
+    input_device::PortAudioDevice,
+    output_device::PortAudioDevice,
+    input_channels = 2,
+    output_channels = 2;
     Sample = Float32,
     sample_rate = combine_default_sample_rates(
-        in_channels,
-        in_device.default_sample_rate,
-        out_channels,
-        out_device.default_sample_rate,
+        input_channels,
+        input_device,
+        output_channels,
+        output_device,
     ),
-    latency = get_default_latency(in_device, out_device),
+    latency = get_default_latency(
+        input_channels,
+        input_device,
+        output_channels,
+        output_device,
+    ),
     frames_per_buffer = 0,
     # these defaults are currently undocumented
     flags = paNoFlag,
@@ -483,15 +541,27 @@ function PortAudioStream(
     output_info = nothing,
     warn_xruns = true,
 )
-    in_channels = fill_max_channels(in_channels, in_device.input_bounds)
-    out_channels = fill_max_channels(out_channels, out_device.output_bounds)
+    input_channels_filled, output_channels_filled =
+        fill_both_channels(input_channels, input_device, output_channels, output_device)
     # we need a mutable pointer so portaudio can set it for us
     mutable_pointer = Ref{Ptr{PaStream}}(0)
     handle_status(
         Pa_OpenStream(
             mutable_pointer,
-            make_parameters(in_device, in_channels, Sample, latency, input_info),
-            make_parameters(out_device, out_channels, Sample, latency, output_info),
+            make_parameters(
+                input_device,
+                input_channels_filled,
+                Sample,
+                latency,
+                input_info,
+            ),
+            make_parameters(
+                output_device,
+                output_channels_filled,
+                Sample,
+                latency,
+                output_info,
+            ),
             float(sample_rate),
             frames_per_buffer,
             flags,
@@ -508,36 +578,19 @@ function PortAudioStream(
             real_write!,
             Sample,
             pointer_to,
-            out_device,
-            out_channels;
+            output_device,
+            output_channels_filled;
             warn_xruns = warn_xruns,
         ),
         start_messanger(
             real_read!,
             Sample,
             pointer_to,
-            in_device,
-            in_channels;
+            input_device,
+            input_channels_filled;
             warn_xruns = warn_xruns,
         ),
     )
-end
-
-function device_by_name(device_name)
-    # maintain an error message with avaliable devices while we look to save time
-    error_message = IOBuffer()
-    write(error_message, "No device matching ")
-    write(error_message, repr(device_name))
-    write(error_message, " found.\nAvailable Devices:\n")
-    for device in devices()
-        potential_match = name(device)
-        if potential_match == device_name
-            return device
-        end
-        write(error_message, repr(potential_match))
-        write(error_message, '\n')
-    end
-    error(String(take!(error_message)))
 end
 
 # handle device names given as streams
@@ -548,33 +601,33 @@ function PortAudioStream(
     keywords...,
 )
     PortAudioStream(
-        device_by_name(in_device_name),
-        device_by_name(out_device_name),
+        get_device_info(in_device_name),
+        get_device_info(out_device_name),
         arguments...;
         keywords...,
     )
 end
 
-# if one device is given, use it for input and output, but set in_channels=0 so we
+# if one device is given, use it for input and output, but set input_channels=0 so we
 # end up with an output-only stream
 function PortAudioStream(
     device::Union{PortAudioDevice, AbstractString},
-    in_channels = 0,
-    out_channels = 2;
+    input_channels = 0,
+    output_channels = 2;
     keywords...,
 )
-    PortAudioStream(device, device, in_channels, out_channels; keywords...)
+    PortAudioStream(device, device, input_channels, output_channels; keywords...)
 end
 
 # use the default input and output devices
-function PortAudioStream(in_channels = 2, out_channels = 2; keywords...)
+function PortAudioStream(input_channels = 2, output_channels = 2; keywords...)
     in_index = get_default_input_device()
     out_index = get_default_output_device()
     PortAudioStream(
         PortAudioDevice(get_device_info(in_index), in_index),
         PortAudioDevice(get_device_info(out_index), out_index),
-        in_channels,
-        out_channels;
+        input_channels,
+        output_channels;
         keywords...,
     )
 end
@@ -599,7 +652,7 @@ end
 
 function isopen(pointer_to::Ptr{PaStream})
     # we aren't actually interested if the stream is stopped or not
-    # instea, we are looking for the error which comes from checking on a closed stream
+    # instead, we are looking for the error which comes from checking on a closed stream
     error_number = Pa_IsStreamStopped(pointer_to)
     if error_number >= 0
         true
@@ -669,12 +722,6 @@ function eltype(
     ::Type{<:Union{PortAudioSink{Sample}, PortAudioSource{Sample}}},
 ) where {Sample}
     Sample
-end
-function close(::Union{PortAudioSink, PortAudioSource})
-    throw(ErrorException("""
-        Attempted to close PortAudioSink or PortAudioSource.
-        Close the containing PortAudioStream instead
-        """))
 end
 function isopen(source_or_sink::Union{PortAudioSink, PortAudioSource})
     isopen(source_or_sink.stream)
