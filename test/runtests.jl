@@ -65,8 +65,6 @@ using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
     @testset "libortaudio without sound" begin
         @test handle_status(Pa_GetHostApiCount()) >= 0
         @test handle_status(Pa_GetDefaultHostApi()) >= 0
-        @test PaErrorCode(Pa_HostApiTypeIdToHostApiIndex(paInDevelopment)) ==
-              paHostApiNotFound
         @test Pa_HostApiDeviceIndexToDeviceIndex(paInDevelopment, 0) == 0
         @test safe_load(Pa_GetLastHostErrorInfo(), ErrorException("no info")) isa
               PaHostErrorInfo
@@ -183,6 +181,8 @@ if !isempty(devices())
             @test_throws ArgumentError("Input or output must have at least 1 channel") PortAudioStream(0, 0)
         end
         @testset "libportaudio with sound" begin
+            @test PaErrorCode(Pa_HostApiTypeIdToHostApiIndex(paInDevelopment)) ==
+              paHostApiNotFound
             stream = PortAudioStream(2, 2)
             pointer_to = stream.pointer_to
             @test Bool(handle_status(Pa_IsStreamActive(pointer_to)))
