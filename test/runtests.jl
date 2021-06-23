@@ -27,7 +27,9 @@ using PortAudio.LibPortAudio:
     Pa_GetSampleSize,
     Pa_GetStreamCpuLoad,
     Pa_GetStreamInfo,
+    Pa_GetStreamReadAvailable,
     Pa_GetStreamTime,
+    Pa_GetStreamWriteAvailable,
     Pa_HostApiDeviceIndexToDeviceIndex,
     paHostApiNotFound,
     Pa_HostApiTypeIdToHostApiIndex,
@@ -43,6 +45,7 @@ using PortAudio.LibPortAudio:
     paOutputUnderflowed,
     Pa_SetStreamFinishedCallback,
     Pa_Sleep,
+    Pa_StopStream,
     PaStream,
     PaStreamInfo,
     PaStreamParameters
@@ -74,7 +77,10 @@ using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
     end
 
     @testset "Errors without sound" begin
+        @test_throws ArgumentError("Default input and output sample rates disagree") combine_default_sample_rates(0, 1)
         wrong = "foobarbaz"
+        @test sprint(showerror, PortAudioException(paNotInitialized)) == 
+            "PortAudioException: PortAudio not initialized"
         @test_throws KeyError(wrong) get_device_info(wrong)
         @test_throws BoundsError(Pa_GetDeviceInfo, -1) get_device_info(-1)
         @test_throws ArgumentError("Could not find ALSA config") seek_alsa_conf([])
@@ -125,6 +131,8 @@ if !isempty(devices())
             @test sprint(show, sink) == "2 channel sink: $(repr(default_input_device))"
             @test sprint(show, source) == "2 channel source: $(repr(default_output_device))"
             write(stream, stream, 5s)
+            @test PaErrorCode(handle_status(Pa_StopStream(stream.pointer_to))) == paNoError
+            @test isopen(stream)
             close(stream)
             @test !isopen(stream)
             @test !isopen(sink)
@@ -175,6 +183,14 @@ if !isempty(devices())
                 @test fetch(frame_count_2) == 48000
             end
         end
+        @testset "Constructors" begin
+            PortAudioStream(2, max; call_back = C_NULL) do stream
+                @test isopen(stream)
+            end
+            PortAudioStream(default_input_device) do stream
+                @test isopen(stream)
+            end
+        end
         @testset "Errors with sound" begin
             @test_throws DomainError(typemax(Int), "max channels exceeded") PortAudioStream(typemax(Int), 0)
             @test_throws ArgumentError("Input or output must have at least 1 channel") PortAudioStream(0, 0)
@@ -185,6 +201,8 @@ if !isempty(devices())
             @test Pa_HostApiDeviceIndexToDeviceIndex(paInDevelopment, 0) == 0
             stream = PortAudioStream(2, 2)
             pointer_to = stream.pointer_to
+            @test handle_status(Pa_GetStreamReadAvailable(pointer_to)) >= 0
+            @test handle_status(Pa_GetStreamWriteAvailable(pointer_to)) >= 0
             @test Bool(handle_status(Pa_IsStreamActive(pointer_to)))
             @test safe_load(Pa_GetStreamInfo(pointer_to), ErrorException("no info")) isa
                   PaStreamInfo
@@ -197,3 +215,5 @@ if !isempty(devices())
         end
     end
 end
+
+# sample rates disagree

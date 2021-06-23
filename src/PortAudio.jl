@@ -348,9 +348,16 @@ function get_default_latency(input_channels, input_device, output_channels, outp
     )
 end
 
+function combine_default_sample_rates(input_sample_rate, output_sample_rate)
+    if input_sample_rate != output_sample_rate
+        throw(ArgumentError("Default input and output sample rates disagree"))
+    end
+    input_sample_rate
+end
+
 # we can only have one sample rate
 # so if the default sample rates differ, throw an error
-function combine_default_sample_rates(
+function get_default_sample_rates(
     input_channels,
     input_device,
     output_channels,
@@ -359,16 +366,12 @@ function combine_default_sample_rates(
     input_channels_filled, output_channels_filled =
         fill_both_channels(input_channels, input_device, output_channels, output_device)
     input_output_or_both(
+        combine_default_sample_rates,
         input_channels_filled,
         output_channels_filled,
         input_device.default_sample_rate,
         output_device.default_sample_rate,
-    ) do input_sample_rate, output_sample_rate
-        if input_sample_rate != output_sample_rate
-            throw(ArgumentError("Default input and output sample rates disagree"))
-        end
-        input_sample_rate
-    end
+    )
 end
 
 # we will spawn a thread to either read or write to port audio
@@ -520,7 +523,7 @@ function PortAudioStream(
     input_channels = 2,
     output_channels = 2;
     Sample = Float32,
-    sample_rate = combine_default_sample_rates(
+    sample_rate = get_default_sample_rates(
         input_channels,
         input_device,
         output_channels,
@@ -608,11 +611,10 @@ function PortAudioStream(
     )
 end
 
-# if one device is given, use it for input and output, but set input_channels=0 so we
-# end up with an output-only stream
+# if one device is given, use it for input and output
 function PortAudioStream(
     device::Union{PortAudioDevice, AbstractString},
-    input_channels = 0,
+    input_channels = 2,
     output_channels = 2;
     keywords...,
 )
@@ -646,7 +648,9 @@ function close(stream::PortAudioStream)
     close(stream.sink_messanger)
     close(stream.source_messanger)
     pointer_to = stream.pointer_to
-    handle_status(Pa_StopStream(pointer_to))
+    if !Bool(handle_status(Pa_IsStreamStopped(pointer_to)))
+        handle_status(Pa_StopStream(pointer_to))
+    end
     handle_status(Pa_CloseStream(pointer_to))
 end
 
