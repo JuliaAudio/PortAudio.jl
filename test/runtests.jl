@@ -65,7 +65,6 @@ using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
     @testset "libortaudio without sound" begin
         @test handle_status(Pa_GetHostApiCount()) >= 0
         @test handle_status(Pa_GetDefaultHostApi()) >= 0
-        @test Pa_HostApiDeviceIndexToDeviceIndex(paInDevelopment, 0) == 0
         @test safe_load(Pa_GetLastHostErrorInfo(), ErrorException("no info")) isa
               PaHostErrorInfo
         @test PaErrorCode(Pa_IsFormatSupported(C_NULL, C_NULL, 0.0)) == paInvalidDevice
@@ -183,6 +182,7 @@ if !isempty(devices())
         @testset "libportaudio with sound" begin
             @test PaErrorCode(Pa_HostApiTypeIdToHostApiIndex(paInDevelopment)) ==
               paHostApiNotFound
+            @test Pa_HostApiDeviceIndexToDeviceIndex(paInDevelopment, 0) == 0
             stream = PortAudioStream(2, 2)
             pointer_to = stream.pointer_to
             @test Bool(handle_status(Pa_IsStreamActive(pointer_to)))
