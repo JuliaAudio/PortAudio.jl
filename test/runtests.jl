@@ -30,6 +30,7 @@ using PortAudio.LibPortAudio:
     Pa_GetStreamReadAvailable,
     Pa_GetStreamTime,
     Pa_GetStreamWriteAvailable,
+    Pa_GetVersionInfo,
     Pa_HostApiDeviceIndexToDeviceIndex,
     paHostApiNotFound,
     Pa_HostApiTypeIdToHostApiIndex,
@@ -48,7 +49,8 @@ using PortAudio.LibPortAudio:
     Pa_StopStream,
     PaStream,
     PaStreamInfo,
-    PaStreamParameters
+    PaStreamParameters,
+    PaVersionInfo
 using SampledSignals: nchannels, s, SampleBuf, samplerate, SinSource
 using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
 
@@ -68,6 +70,7 @@ using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
     @testset "libortaudio without sound" begin
         @test handle_status(Pa_GetHostApiCount()) >= 0
         @test handle_status(Pa_GetDefaultHostApi()) >= 0
+        @test safe_load(Pa_GetVersionInfo(),ErrorException("no info")) isa PaVersionInfo
         @test safe_load(Pa_GetLastHostErrorInfo(), ErrorException("no info")) isa
               PaHostErrorInfo
         @test PaErrorCode(Pa_IsFormatSupported(C_NULL, C_NULL, 0.0)) == paInvalidDevice

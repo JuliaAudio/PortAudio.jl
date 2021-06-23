@@ -28,8 +28,8 @@ using .LibPortAudio:
     Pa_GetHostApiInfo,
     Pa_GetStreamReadAvailable,
     Pa_GetStreamWriteAvailable,
-    Pa_GetVersionText,
     Pa_GetVersion,
+    Pa_GetVersionText,
     PaHostApiTypeId,
     Pa_Initialize,
     paInputOverflowed,
@@ -749,16 +749,8 @@ end
 # both reading and writing will outsource to the reading and writing demons
 # so we just need to pass inputs in and take outputs out
 function exchange(messanger, arguments...)
-    inputs = messanger.inputs
-    if isopen(inputs)
-        put!(inputs, arguments)
-        outputs = messanger.outputs
-        if isopen(outputs)
-            return take!(outputs)
-        end
-    end
-    # if either the input or output channel is closed, no frames can be read or written
-    0
+    put!(messanger.inputs, arguments)
+    take!(messanger.outputs)
 end
 
 function unsafe_write(sink::PortAudioSink, julia_buffer::Array, offset, frame_count)
