@@ -46,13 +46,19 @@ using .LibPortAudio:
     Pa_Terminate,
     Pa_WriteStream
 
-# for structs and strings results, PortAudio will return NULL instead of erroring
+# for structs from indexes
+# PortAudio will return C_NULL instead of erroring
 # so we need to handle these errors
 function safe_load(result, an_error)
     if result == C_NULL
         throw(an_error)
     end
     unsafe_load(result)
+end
+
+# for functions that retrieve an index, throw a key error if it doesn't exist
+function safe_key(a_function, an_index)
+    safe_load(a_function(an_index), KeyError(an_index))
 end
 
 # error numbers are integers, while error codes are an @enum
@@ -114,7 +120,7 @@ function __init__()
             ENV[config_folder] =
                 seek_alsa_conf(["/usr/share/alsa", "/usr/local/share/alsa", "/etc/alsa"])
         end
-
+        # the plugin folder will contain plugins for, critically, PulseAudio
         plugin_folder = "ALSA_PLUGIN_DIR"
         if plugin_folder ∉ keys(ENV) && alsa_plugins_jll.is_available()
             ENV[plugin_folder] = joinpath(alsa_plugins_jll.artifact_dir, "lib", "alsa-lib")
@@ -134,6 +140,7 @@ function versioninfo(io::IO = stdout)
     println(io, "Version: ", Pa_GetVersion())
 end
 
+# bounds for when a device is used as an input, or as an output
 struct Bounds
     max_channels::Int
     low_latency::Float64
@@ -152,12 +159,8 @@ end
 function PortAudioDevice(info::PaDeviceInfo, index)
     PortAudioDevice(
         unsafe_string(info.name),
-        unsafe_string(
-            safe_load(
-                (Pa_GetHostApiInfo(info.hostApi)),
-                BoundsError(Pa_GetHostApiInfo, index),
-            ).name,
-        ),
+        # replace host api code with its name
+        unsafe_string(safe_key(Pa_GetHostApiInfo, info.hostApi,).name),
         info.defaultSampleRate,
         index,
         Bounds(
@@ -174,17 +177,26 @@ function PortAudioDevice(info::PaDeviceInfo, index)
 end
 
 name(device::PortAudioDevice) = device.name
+# show just key info about the device
+function show(io::IO, device::PortAudioDevice)
+    print(io, repr(name(device)))
+    print(io, ' ')
+    print(io, device.input_bounds.max_channels)
+    print(io, '→')
+    print(io, device.output_bounds.max_channels)
+end
 
-function get_default_input_device()
+function get_default_input_index()
     handle_status(Pa_GetDefaultInputDevice())
 end
 
-function get_default_output_device()
+function get_default_output_index()
     handle_status(Pa_GetDefaultOutputDevice())
 end
 
+# we can look up devices by index or name
 function get_device_info(index::Integer)
-    safe_load((Pa_GetDeviceInfo(index)), BoundsError(Pa_GetDeviceInfo, index))
+    safe_key(Pa_GetDeviceInfo, index)
 end
 
 function get_device_info(device_name::AbstractString)
@@ -231,6 +243,7 @@ function Messanger{Sample}(device, channels) where {Sample}
         device,
         zeros(Sample, channels, CHUNK_FRAMES),
         channels,
+        # unbuffered channels so putting and taking will block till everyone's ready
         INPUT_CHANNEL_TYPE{Sample}(0),
         OUTPUT_CHANNEL_TYPE(0),
     )
@@ -250,6 +263,7 @@ end
 
 struct PortAudioStream{Sample}
     sample_rate::Float64
+    # pointer to the c object
     pointer_to::Ptr{PaStream}
     sink_messanger::Messanger{Sample}
     source_messanger::Messanger{Sample}
@@ -266,8 +280,8 @@ const TYPE_TO_FORMAT = Dict{Type, PaSampleFormat}(
 )
 
 # we need to convert nothing so it will be handled by C correctly
-convert_nothing(::Nothing) = C_NULL
-convert_nothing(something) = something
+nothing_to_c_null(::Nothing) = C_NULL
+nothing_to_c_null(something) = something
 
 function make_parameters(device, channels, Sample, latency, host_api_specific_stream_info)
     if channels == 0
@@ -280,7 +294,7 @@ function make_parameters(device, channels, Sample, latency, host_api_specific_st
                 channels,
                 TYPE_TO_FORMAT[Sample],
                 latency,
-                convert_nothing(host_api_specific_stream_info),
+                nothing_to_c_null(host_api_specific_stream_info),
             ),
         )
     end
@@ -301,6 +315,7 @@ end
 
 const AT_LEAST_ONE = ArgumentError("Input or output must have at least 1 channel")
 
+# fill max for both channels based on device bounds
 function fill_both_channels(input_channels, input_device, output_channels, output_device)
     input_channels_filled = fill_max_channels(input_channels, input_device.input_bounds)
     output_channels_filled = fill_max_channels(output_channels, output_device.output_bounds)
@@ -311,7 +326,9 @@ function fill_both_channels(input_channels, input_device, output_channels, outpu
     end
 end
 
-function input_output_or_both(
+# if input or output only, use the corresponding value
+# otherwise, run a custom combine function
+function combine_defaults(
     combine_function,
     input_channels_filled,
     output_channels_filled,
@@ -328,16 +345,17 @@ function input_output_or_both(
         if output_channels_filled > 0
             output
         else
+            # this check is probably redundant, but included for completeness
             throw(AT_LEAST_ONE)
         end
     end
 end
 
-# worst case scenario
 function get_default_latency(input_channels, input_device, output_channels, output_device)
     input_channels_filled, output_channels_filled =
         fill_both_channels(input_channels, input_device, output_channels, output_device)
-    input_output_or_both(
+    combine_defaults(
+        # worst case scenario: max of high latency for input and output
         max,
         input_channels_filled,
         output_channels_filled,
@@ -346,6 +364,8 @@ function get_default_latency(input_channels, input_device, output_channels, outp
     )
 end
 
+# we can only have one sample rate
+# so if the default sample rates differ, throw an error
 function combine_default_sample_rates(input_sample_rate, output_sample_rate)
     if input_sample_rate != output_sample_rate
         throw(ArgumentError("Default input and output sample rates disagree"))
@@ -353,8 +373,6 @@ function combine_default_sample_rates(input_sample_rate, output_sample_rate)
     input_sample_rate
 end
 
-# we can only have one sample rate
-# so if the default sample rates differ, throw an error
 function get_default_sample_rates(
     input_channels,
     input_device,
@@ -363,7 +381,7 @@ function get_default_sample_rates(
 )
     input_channels_filled, output_channels_filled =
         fill_both_channels(input_channels, input_device, output_channels, output_device)
-    input_output_or_both(
+    combine_defaults(
         combine_default_sample_rates,
         input_channels_filled,
         output_channels_filled,
@@ -372,6 +390,9 @@ function get_default_sample_rates(
     )
 end
 
+# the messanger will be running on a separate thread in the background
+# alternating transposing and
+# waiting to pass inputs and outputs back and forth to PortAudio
 function run_messanger(
     a_function,
     pointer_to,
@@ -387,10 +408,10 @@ function run_messanger(
             # no frames can be read/written if the input channel is closed
             0
         end
-        # check to see if the output channel has closed too
         if isopen(outputs)
             put!(outputs, output)
         else
+            # if the output channel has closed too, we're done
             break
         end
     end
@@ -410,6 +431,7 @@ function start_messanger(
     port_audio_buffer = messanger.port_audio_buffer
     inputs = messanger.inputs
     outputs = messanger.outputs
+    # start the messanger thread when its created
     @spawn run_messanger(
         a_function,
         pointer_to,
@@ -489,7 +511,6 @@ function real_read!(
         # receive the data, then transpose
         # TODO: if the stream is closed we just want to return a
         # shorter-than-requested frame count instead of throwing an error
-        # get the data, then transpose
         handle_status(
             lock(PORT_AUDIO_LOCK) do
                 Pa_ReadStream(pointer_to, port_audio_buffer, chunk_frames)
@@ -573,11 +594,12 @@ function PortAudioStream(
                 latency,
                 output_info,
             ),
+            # can't be an integer
             float(sample_rate),
             frames_per_buffer,
             flags,
-            convert_nothing(call_back),
-            convert_nothing(user_data),
+            nothing_to_c_null(call_back),
+            nothing_to_c_null(user_data),
         ),
     )
     pointer_to = mutable_pointer[]
@@ -631,8 +653,8 @@ end
 
 # use the default input and output devices
 function PortAudioStream(input_channels = 2, output_channels = 2; keywords...)
-    in_index = get_default_input_device()
-    out_index = get_default_output_device()
+    in_index = get_default_input_index()
+    out_index = get_default_output_index()
     PortAudioStream(
         PortAudioDevice(get_device_info(in_index), in_index),
         PortAudioDevice(get_device_info(out_index), out_index),
@@ -653,10 +675,11 @@ function PortAudioStream(do_function::Function, arguments...; keywords...)
 end
 
 function close(stream::PortAudioStream)
+    # this will shut down the channels, which will shut down the threads
     close(stream.sink_messanger)
     close(stream.source_messanger)
     pointer_to = stream.pointer_to
-    # only stop if it's not arlready stopped
+    # only stop if it's not already stopped
     if !Bool(handle_status(Pa_IsStreamStopped(pointer_to)))
         handle_status(Pa_StopStream(pointer_to))
     end
@@ -742,6 +765,7 @@ end
 name(source_or_sink::PortAudioSink) = name(source_or_sink.stream.sink_messanger)
 name(source_or_sink::PortAudioSource) = name(source_or_sink.stream.source_messanger)
 
+# could show full type name, but the PortAudio part is probably redundant
 kind(::PortAudioSink) = "sink"
 kind(::PortAudioSource) = "source"
 function show(io::IO, sink_or_source::Union{PortAudioSink, PortAudioSource})
@@ -751,6 +775,7 @@ function show(io::IO, sink_or_source::Union{PortAudioSink, PortAudioSource})
         " channel ",
         kind(sink_or_source),
         ": ",
+        # put in quotes
         repr(name(sink_or_source)),
     )
 end

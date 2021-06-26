@@ -3,8 +3,8 @@ using Base.Sys: iswindows
 using PortAudio:
     combine_default_sample_rates,
     devices,
-    get_default_input_device,
-    get_default_output_device,
+    get_default_input_index,
+    get_default_output_index,
     get_device_info,
     handle_status,
     initialize,
@@ -64,7 +64,8 @@ using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
     end
 
     @testset "Can list devices without crashing" begin
-        devices()
+        display(devices())
+        println()
     end
 
     @testset "libortaudio without sound" begin
@@ -92,7 +93,7 @@ using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
         @test sprint(showerror, PortAudioException(paNotInitialized)) ==
               "PortAudioException: PortAudio not initialized"
         @test_throws KeyError(wrong) get_device_info(wrong)
-        @test_throws BoundsError(Pa_GetDeviceInfo, -1) get_device_info(-1)
+        @test_throws KeyError(-1) get_device_info(-1)
         @test_throws ArgumentError("Could not find ALSA config") seek_alsa_conf([])
         @test_logs (:warn, "libportaudio: Output underflowed") handle_status(
             PaError(paOutputUnderflowed),
@@ -111,9 +112,9 @@ if !isempty(devices())
     initialize()
 
     # these default values are specific to local machines
-    input_index = get_default_input_device()
+    input_index = get_default_input_index()
     default_input_device = PortAudioDevice(get_device_info(input_index), input_index).name
-    output_index = get_default_output_device()
+    output_index = get_default_output_index()
     default_output_device =
         PortAudioDevice(get_device_info(output_index), output_index).name
 
