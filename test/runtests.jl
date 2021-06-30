@@ -123,6 +123,7 @@ if !isempty(devices())
             println("Recording...")
             stream = PortAudioStream(2, 0)
             buffer = read(stream, 5s)
+            sleep(1)
             @test size(buffer) ==
                   (round(Int, 5 * samplerate(stream)), nchannels(stream.source))
             close(stream)
@@ -130,6 +131,7 @@ if !isempty(devices())
             PortAudioStream(0, 2) do stream
                 write(stream, buffer)
             end
+            sleep(1)
             println("Testing pass-through")
             stream = PortAudioStream(2, 2)
             sink = stream.sink
@@ -143,6 +145,7 @@ if !isempty(devices())
             @test sprint(show, source) ==
                   "2 channel source: $(repr(default_output_device_name))"
             write(stream, stream, 5s)
+            sleep(1)
             @test PaErrorCode(handle_status(Pa_StopStream(stream.pointer_to))) == paNoError
             @test isopen(stream)
             close(stream)
@@ -158,11 +161,13 @@ if !isempty(devices())
                     SinSource(eltype(stream), samplerate(stream) * 0.8, [220, 330]),
                     3s,
                 )
+                sleep(1)                
                 write(
                     stream,
                     SinSource(eltype(stream), samplerate(stream) * 1.2, [220, 330]),
                     3s,
                 )
+                sleep(1)
             end
         end
         @testset "Open Device by name" begin
@@ -180,7 +185,9 @@ if !isempty(devices())
                 frame_count_1 = @async write(stream, buffer)
                 frame_count_2 = @async write(stream, buffer)
                 @test fetch(frame_count_1) == 48000
+                sleep(1)
                 @test fetch(frame_count_2) == 48000
+                sleep(1)
             end
         end
         @testset "Queued Reading" begin
@@ -192,7 +199,9 @@ if !isempty(devices())
                 frame_count_1 = @async read!(stream, buffer)
                 frame_count_2 = @async read!(stream, buffer)
                 @test fetch(frame_count_1) == 48000
+                sleep(1)
                 @test fetch(frame_count_2) == 48000
+                sleep(1)
             end
         end
         @testset "Constructors" begin

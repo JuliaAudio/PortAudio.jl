@@ -1,6 +1,5 @@
 module PortAudio
 
-using Base: rest
 using alsa_plugins_jll: alsa_plugins_jll
 import Base:
     close,
