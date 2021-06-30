@@ -803,8 +803,8 @@ end
 # If we had multiple inheritance, then PortAudioStreams could be both a sink and source
 # Since we don't, we have to make wrappers instead
 for (TypeName, Super) in ((:PortAudioSink, :SampleSink), (:PortAudioSource, :SampleSource))
-    @eval struct $TypeName{Sample, InputMessager, OutputBuffer} <: $Super
-        stream::PortAudioStream{Sample, InputMessager, OutputBuffer}
+    @eval struct $TypeName{Sample, InputBuffer, OutputBuffer} <: $Super
+        stream::PortAudioStream{Sample, InputBuffer, OutputBuffer}
     end
 end
 
