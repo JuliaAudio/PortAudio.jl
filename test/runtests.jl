@@ -6,6 +6,8 @@ using PortAudio:
     get_default_input_index,
     get_default_output_index,
     get_device_info,
+    get_input_type,
+    get_output_type,
     handle_status,
     initialize,
     PortAudioException,
@@ -85,16 +87,11 @@ using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
     end
 
     @testset "Errors without sound" begin
-        @test_throws ArgumentError("Default input and output sample rates disagree") combine_default_sample_rates(
-            0,
-            1,
-        )
-        wrong = "foobarbaz"
         @test sprint(showerror, PortAudioException(paNotInitialized)) ==
               "PortAudioException: PortAudio not initialized"
-        @test_throws KeyError(wrong) get_device_info(wrong)
+        @test_throws KeyError("foobarbaz") get_device_info("foobarbaz")
         @test_throws KeyError(-1) get_device_info(-1)
-        @test_throws ArgumentError("Could not find ALSA config") seek_alsa_conf([])
+        @test_throws ArgumentError("Could not find alsa.conf in ()") seek_alsa_conf(())
         @test_logs (:warn, "libportaudio: Output underflowed") handle_status(
             PaError(paOutputUnderflowed),
         )
@@ -103,6 +100,8 @@ using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
         )
         Pa_Sleep(1)
         @test Pa_GetSampleSize(paFloat32) == 4
+        @test_throws MethodError(get_input_type, (Any,)) get_input_type(Any)
+        @test_throws MethodError(get_output_type, (Any,)) get_output_type(Any)
     end
 end
 
@@ -113,10 +112,11 @@ if !isempty(devices())
 
     # these default values are specific to local machines
     input_index = get_default_input_index()
-    default_input_device = PortAudioDevice(get_device_info(input_index), input_index).name
+    default_input_device = get_device_info(input_index)
+    default_input_device_name = default_input_device.name
     output_index = get_default_output_index()
-    default_output_device =
-        PortAudioDevice(get_device_info(output_index), output_index).name
+    default_output_device = get_device_info(output_index)
+    default_output_device_name = default_output_device.name
 
     @testset "Tests with sound" begin
         @testset "Interactive tests" begin
@@ -137,10 +137,11 @@ if !isempty(devices())
             @test sprint(show, stream) == """
                 PortAudioStream{Float32}
                   Samplerate: 44100.0Hz
-                  2 channel sink: $(repr(default_output_device))
-                  2 channel source: $(repr(default_input_device))"""
-            @test sprint(show, sink) == "2 channel sink: $(repr(default_input_device))"
-            @test sprint(show, source) == "2 channel source: $(repr(default_output_device))"
+                  2 channel sink: $(repr(default_output_device_name))
+                  2 channel source: $(repr(default_input_device_name))"""
+            @test sprint(show, sink) == "2 channel sink: $(repr(default_input_device_name))"
+            @test sprint(show, source) ==
+                  "2 channel source: $(repr(default_output_device_name))"
             write(stream, stream, 5s)
             @test PaErrorCode(handle_status(Pa_StopStream(stream.pointer_to))) == paNoError
             @test isopen(stream)
@@ -165,7 +166,7 @@ if !isempty(devices())
             end
         end
         @testset "Open Device by name" begin
-            PortAudioStream(default_input_device, default_output_device) do stream
+            PortAudioStream(default_input_device_name, default_output_device_name) do stream
             end
         end
         # no way to check that the right data is actually getting read or written here,
@@ -198,18 +199,29 @@ if !isempty(devices())
             PortAudioStream(2, max; call_back = C_NULL) do stream
                 @test isopen(stream)
             end
-            PortAudioStream(default_input_device) do stream
+            PortAudioStream(default_input_device_name) do stream
                 @test isopen(stream)
             end
         end
         @testset "Errors with sound" begin
-            @test_throws DomainError(typemax(Int), "max channels exceeded") PortAudioStream(
+            big = typemax(Int)
+            @test_throws DomainError(
                 typemax(Int),
-                0,
-            )
+                "$big exceeds max input channels for $default_input_device_name",
+            ) PortAudioStream(big, 0)
             @test_throws ArgumentError("Input or output must have at least 1 channel") PortAudioStream(
                 0,
                 0,
+            )
+            @test_throws ArgumentError("""
+            Default sample rate 0 for input $default_input_device_name disagrees with
+            default sample rate 1 for output $default_output_device_name.
+            Please specify a sample rate.
+            """) combine_default_sample_rates(
+                default_input_device,
+                0,
+                default_output_device,
+                1,
             )
         end
         @testset "libportaudio with sound" begin
