@@ -265,6 +265,7 @@ struct SampledSignalsWriter{Sample} <: Scribe
 end
 
 # define on types
+# throw an error if not defined
 function get_input_type(a_type::Type)
     throw(MethodError(get_input_type, (a_type,)))
 end
@@ -522,7 +523,8 @@ function run_scribe(buffer)
         input = try
             take!(inputs)
         catch an_error
-            if an_error isa InvalidStateException
+            # if the channel is closed, the scribe knows its done
+            if an_error isa InvalidStateException && an_error.state === :closed
                 break
             else
                 rethrow(an_error)
@@ -807,9 +809,8 @@ for (TypeName, Super) in ((:PortAudioSink, :SampleSink), (:PortAudioSource, :Sam
 end
 
 # provided for backwards compatibility
-# we should probably deprecate at some point
-# because PortAudioSink and PortAudioSource would not be compatible with custom readers/writers
-function getproperty(stream::PortAudioStream, property::Symbol)
+# only defined for SampledSignals scribes
+function getproperty(stream::PortAudioStream{<:Any, <:Buffer{<:Any, <:SampledSignalsWriter}, <:Buffer{<:Any, <:SampledSignalsReader}}, property::Symbol)
     if property === :sink
         PortAudioSink(stream)
     elseif property === :source
