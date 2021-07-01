@@ -253,5 +253,3 @@ if !isempty(devices())
         end
     end
 end
-
-# sample rates disagree
