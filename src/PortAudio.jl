@@ -60,7 +60,7 @@ using .LibPortAudio:
     Pa_Terminate,
     Pa_WriteStream
 
-# for structs from indexes
+# for structs and strings
 # PortAudio will return C_NULL instead of erroring
 # so we need to handle these errors
 function safe_load(result, an_error)
@@ -254,7 +254,7 @@ end
 # 1) the buffer
 # 2) a tuple of custom inputs
 # and return the output type
-# this call method should make use of read_buffer/write_buffer methods above
+# this call method can make use of read_buffer/write_buffer methods above
 abstract type Scribe end
 
 struct SampledSignalsReader{Sample} <: Scribe
@@ -304,11 +304,7 @@ function cut_to_size(buffer, julia_buffer, use_frames, offset, already)
     )
 end
 
-function (writer::SampledSignalsWriter)(
-    buffer,
-    (julia_buffer, offset, frame_count),
-    # data is passed to and from portaudio in chunks with this many frames
-)
+function (writer::SampledSignalsWriter)(buffer, (julia_buffer, offset, frame_count))
     already = 0
     chunk_frames = buffer.chunk_frames
     # if we still have frames to write
@@ -412,7 +408,7 @@ end
 # PortAudioStream
 #
 
-struct PortAudioStream{Sample, SinkBuffer, SourceBuffer}
+struct PortAudioStream{SinkBuffer, SourceBuffer}
     sample_rate::Float64
     # pointer to the c object
     pointer_to::Ptr{PaStream}
@@ -420,24 +416,6 @@ struct PortAudioStream{Sample, SinkBuffer, SourceBuffer}
     sink_task::Task
     source_buffer::SourceBuffer
     source_task::Task
-end
-
-function PortAudioStream{Sample}(
-    sample_rate::Float64,
-    pointer_to::Ptr{PaStream},
-    sink_buffer::SinkBuffer,
-    sink_task::Task,
-    source_buffer::SourceBuffer,
-    source_task::Task,
-) where {Sample, SinkBuffer, SourceBuffer}
-    PortAudioStream{Sample, SinkBuffer, SourceBuffer}(
-        sample_rate,
-        pointer_to,
-        sink_buffer,
-        sink_task,
-        source_buffer,
-        source_task,
-    )
 end
 
 # portaudio uses codes instead of types for the sample format
@@ -454,7 +432,13 @@ const TYPE_TO_FORMAT = Dict{Type, PaSampleFormat}(
 nothing_to_c_null(::Nothing) = C_NULL
 nothing_to_c_null(something) = something
 
-function make_parameters(device, channels, Sample, latency, host_api_specific_stream_info)
+function make_parameters(
+    device,
+    channels,
+    latency;
+    Sample = Float32,
+    host_api_specific_stream_info = nothing,
+)
     if channels == 0
         # if we don't need any channels, we don't need the source/sink at all
         C_NULL
@@ -568,6 +552,7 @@ function PortAudioStream(
     latency = nothing,
     warn_xruns = true,
     # these defaults are currently undocumented
+    # data is passed to and from portaudio in chunks with this many frames
     chunk_frames = 128,
     frames_per_buffer = 0,
     flags = paNoFlag,
@@ -640,19 +625,17 @@ function PortAudioStream(
             make_parameters(
                 input_device,
                 input_channels_filled,
-                Sample,
-                latency,
-                input_info,
+                latency;
+                host_api_specific_stream_info = input_info,
             ),
             make_parameters(
                 output_device,
                 output_channels_filled,
-                Sample,
-                latency,
-                output_info,
+                latency;
+                Sample = Sample,
+                host_api_specific_stream_info = output_info,
             ),
-            # can't be an integer
-            float(sample_rate),
+            sample_rate,
             frames_per_buffer,
             flags,
             nothing_to_c_null(call_back),
@@ -661,7 +644,7 @@ function PortAudioStream(
     )
     pointer_to = mutable_pointer[]
     handle_status(Pa_StartStream(pointer_to))
-    PortAudioStream{Sample}(
+    PortAudioStream(
         sample_rate,
         pointer_to,
         buffer_task(
@@ -767,7 +750,11 @@ end
 isopen(stream::PortAudioStream) = isopen(stream.pointer_to)
 
 samplerate(stream::PortAudioStream) = stream.sample_rate
-eltype(::Type{<:PortAudioStream{Sample}}) where {Sample} = Sample
+function eltype(
+    ::Type{<:PortAudioStream{<:Buffer{Sample}, <:Buffer{Sample}}},
+) where {Sample}
+    Sample
+end
 
 read(stream::PortAudioStream, arguments...) = read(stream.source, arguments...)
 read!(stream::PortAudioStream, arguments...) = read!(stream.source, arguments...)
@@ -803,14 +790,20 @@ end
 # If we had multiple inheritance, then PortAudioStreams could be both a sink and source
 # Since we don't, we have to make wrappers instead
 for (TypeName, Super) in ((:PortAudioSink, :SampleSink), (:PortAudioSource, :SampleSource))
-    @eval struct $TypeName{Sample, InputBuffer, OutputBuffer} <: $Super
-        stream::PortAudioStream{Sample, InputBuffer, OutputBuffer}
+    @eval struct $TypeName{InputBuffer, OutputBuffer} <: $Super
+        stream::PortAudioStream{InputBuffer, OutputBuffer}
     end
 end
 
 # provided for backwards compatibility
 # only defined for SampledSignals scribes
-function getproperty(stream::PortAudioStream{<:Any, <:Buffer{<:Any, <:SampledSignalsWriter}, <:Buffer{<:Any, <:SampledSignalsReader}}, property::Symbol)
+function getproperty(
+    stream::PortAudioStream{
+        <:Buffer{<:Any, <:SampledSignalsWriter},
+        <:Buffer{<:Any, <:SampledSignalsReader},
+    },
+    property::Symbol,
+)
     if property === :sink
         PortAudioSink(stream)
     elseif property === :source
@@ -830,7 +823,12 @@ function samplerate(source_or_sink::Union{PortAudioSink, PortAudioSource})
     samplerate(source_or_sink.stream)
 end
 function eltype(
-    ::Type{<:Union{PortAudioSink{Sample}, PortAudioSource{Sample}}},
+    ::Type{
+        <:Union{
+            <:PortAudioSink{<:Buffer{Sample}, <:Buffer{Sample}},
+            <:PortAudioSource{<:Buffer{Sample}, <:Buffer{Sample}},
+        },
+    },
 ) where {Sample}
     Sample
 end
@@ -864,7 +862,7 @@ function exchange(buffer, arguments...)
 end
 
 function unsafe_write(
-    sink::PortAudioSink{<:Any, <:Buffer{<:Any, <:SampledSignalsWriter}},
+    sink::PortAudioSink{<:Buffer{<:Any, <:SampledSignalsWriter}},
     julia_buffer::Array,
     offset,
     frame_count,
@@ -873,7 +871,7 @@ function unsafe_write(
 end
 
 function unsafe_read!(
-    source::PortAudioSource{<:Any, <:Any, <:Buffer{<:Any, <:SampledSignalsReader}},
+    source::PortAudioSource{<:Any, <:Buffer{<:Any, <:SampledSignalsReader}},
     julia_buffer::Array,
     offset,
     frame_count,

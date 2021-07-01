@@ -161,7 +161,7 @@ if !isempty(devices())
                     SinSource(eltype(stream), samplerate(stream) * 0.8, [220, 330]),
                     3s,
                 )
-                sleep(1)                
+                sleep(1)
                 write(
                     stream,
                     SinSource(eltype(stream), samplerate(stream) * 1.2, [220, 330]),
