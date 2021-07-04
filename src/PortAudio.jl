@@ -303,6 +303,7 @@ function get_output_type(::Type{<:Union{SampledSignalsReader, SampledSignalsWrit
     Int
 end
 
+# write a full chunk, starting from the middle of the julia buffer
 function full_write!(buffer, julia_buffer, already)
     chunk_frames = buffer.chunk_frames
     @inbounds transpose!(
@@ -318,19 +319,21 @@ function (writer::SampledSignalsWriter)(buffer, (julia_buffer, offset, frame_cou
         let buffer = buffer, julia_buffer = julia_buffer
             already -> full_write!(buffer, julia_buffer, already)
         end,
-        # keep going until there is less than a chunk left
+        # start at the offset, keep going until there is less than a chunk left
         offset:chunk_frames:(offset + frame_count - chunk_frames),
     )
+    # write what's left
     left = frame_count % chunk_frames
-    port_audio_range = 1:left
     @inbounds transpose!(
-        view(buffer.data, :, port_audio_range),
-        view(julia_buffer, port_audio_range .+ (offset + frame_count - left), :),
+        view(buffer.data, :, 1:left),
+        # the last left frames of the julia buffer
+        view(julia_buffer, (1:left) .+ (offset + frame_count - left), :),
     )
     write_buffer(buffer, left)
     frame_count
 end
 
+# similar to above
 function full_read!(buffer, julia_buffer, already)
     chunk_frames = buffer.chunk_frames
     read_buffer(buffer, chunk_frames)
@@ -349,17 +352,17 @@ function (reader::SampledSignalsReader)(buffer, (julia_buffer, offset, frame_cou
         offset:chunk_frames:(offset + frame_count - chunk_frames),
     )
     left = frame_count % chunk_frames
-    port_audio_range = 1:left
     read_buffer(buffer, left)
     @inbounds transpose!(
-        view(julia_buffer, port_audio_range .+ (offset + frame_count - left), :),
-        view(buffer.data, :, port_audio_range),
+        view(julia_buffer, (1:left) .+ (offset + frame_count - left), :),
+        view(buffer.data, :, 1:left),
     )
     frame_count
 end
 
 # a Buffer contains not just a buffer
 # but everything you might need for a source or sink
+# hopefully, because it is immutable, the optimizer can just pass what it needs
 struct Buffer{Sample, Scribe, InputType, OutputType}
     stream_lock::ReentrantLock
     pointer_to::Ptr{PaStream}
@@ -415,9 +418,11 @@ function buffer_task(
             run_scribe(buffer)
         end
     end)
+    # makes it able to run on a separate thread
     task.sticky = false
     if has_channels(buffer)
         schedule(task)
+        # output channel will close when the task ends
         bind(output_channel, task)
     else
         close(input_channel)
@@ -428,11 +433,6 @@ end
 
 nchannels(buffer::Buffer) = buffer.number_of_channels
 name(buffer::Buffer) = name(buffer.device)
-
-function close(buffer::Buffer)
-    close(buffer.inputs)
-    close(buffer.outputs)
-end
 
 #
 # PortAudioStream
@@ -510,7 +510,6 @@ function combine_default_sample_rates(
     output_sample_rate,
 )
     if input_sample_rate != output_sample_rate
-        # TODO: just name
         throw(
             ArgumentError(
                 """
@@ -535,7 +534,7 @@ function run_scribe(buffer)
         input = try
             take!(inputs)
         catch an_error
-            # if the channel is closed, the scribe knows its done
+            # if the input channel is closed, the scribe knows its done
             if an_error isa InvalidStateException && an_error.state === :closed
                 break
             else
@@ -670,6 +669,8 @@ function PortAudioStream(
     PortAudioStream(
         sample_rate,
         pointer_to,
+        # we need to keep track of the tasks
+        # so we can wait for them to finish and catch errors
         buffer_task(
             stream_lock,
             pointer_to,
@@ -746,6 +747,9 @@ end
 function close(stream::PortAudioStream)
     source_buffer = stream.source_buffer
     sink_buffer = stream.sink_buffer
+    # closing is tricky, because we want to make sure we've read exactly as much as we've written
+    # but we have don't know exactly what the tasks are doing
+    # for now, just close one and then the other
     if has_channels(source_buffer)
         # this will shut down the channels, which will shut down the threads
         close(source_buffer.inputs)
@@ -763,11 +767,12 @@ function close(stream::PortAudioStream)
         handle_status(Pa_StopStream(pointer_to))
     end
     handle_status(Pa_CloseStream(pointer_to))
+    # close the debug log and then read the file
+    # this will contain duplicate xrun warnings mentioned above
     close(stream.debug_io)
     debug_log = open(stream.debug_file, "r") do io
         read(io, String)
     end
-    # this will contain duplicate xrun warnings mentioned above
     if !isempty(debug_log)
         @debug debug_log
     end
@@ -792,6 +797,8 @@ function eltype(
     Sample
 end
 
+# these defaults will error for non-sampledsignal scribes
+# which is probably ok; we want these users to define new methods
 read(stream::PortAudioStream, arguments...) = read(stream.source, arguments...)
 read!(stream::PortAudioStream, arguments...) = read!(stream.source, arguments...)
 write(stream::PortAudioStream, arguments...) = write(stream.sink, arguments...)
@@ -800,7 +807,7 @@ function write(sink::PortAudioStream, source::PortAudioStream, arguments...)
 end
 
 function show(io::IO, stream::PortAudioStream)
-    # just show the first parameter (eltype)
+    # just show the first type parameter (eltype)
     print(io, "PortAudioStream{")
     print(io, eltype(stream))
     println(io, "}")
@@ -875,6 +882,7 @@ name(source_or_sink::PortAudioSink) = name(source_or_sink.stream.sink_buffer)
 name(source_or_sink::PortAudioSource) = name(source_or_sink.stream.source_buffer)
 
 # could show full type name, but the PortAudio part is probably redundant
+# because these will usually only get printed as part of show for PortAudioStream
 kind(::PortAudioSink) = "sink"
 kind(::PortAudioSource) = "source"
 function show(io::IO, sink_or_source::Union{PortAudioSink, PortAudioSource})
@@ -897,6 +905,7 @@ function exchange(buffer, arguments...)
     take!(buffer.outputs)
 end
 
+# these will only work with sampledsignals scribes
 function unsafe_write(
     sink::PortAudioSink{<:Buffer{<:Any, <:SampledSignalsWriter}},
     julia_buffer::Array,
