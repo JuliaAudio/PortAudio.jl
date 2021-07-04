@@ -370,7 +370,7 @@ struct Buffer{Sample, Scribe, InputType, OutputType}
     scribe::Scribe
     inputs::Channel{InputType}
     outputs::Channel{OutputType}
-    debug::IOStream
+    debug_io::IOStream
 end
 
 has_channels(something) = nchannels(something) > 0
@@ -381,7 +381,7 @@ function buffer_task(
     device,
     channels,
     scribe::Scribe,
-    debug;
+    debug_io;
     Sample = Float32,
     chunk_frames = 128
 ) where {Scribe}
@@ -400,7 +400,7 @@ function buffer_task(
         scribe,
         input_channel,
         output_channel,
-        debug
+        debug_io
     )
     # we will spawn new threads to read from and write to port audio
     # while the reading thread is talking to PortAudio, the writing thread can be setting up, and vice versa
@@ -411,7 +411,7 @@ function buffer_task(
         # xruns will return an error code and send a duplicate warning to stderr
         # since we handle the error codes, we don't need the duplicate warnings
         # so we send them to a debug log
-        () -> redirect_stderr(buffer.debug) do
+        () -> redirect_stderr(buffer.debug_io) do
             run_scribe(buffer)
         end
     end)
@@ -446,7 +446,8 @@ struct PortAudioStream{SinkBuffer, SourceBuffer}
     sink_task::Task
     source_buffer::SourceBuffer
     source_task::Task
-    debug::IOStream
+    debug_file::String
+    debug_io::IOStream
 end
 
 # portaudio uses codes instead of types for the sample format
@@ -590,9 +591,9 @@ function PortAudioStream(
     stream_lock = ReentrantLock(),
     # this is where you can insert custom readers or writers instead
     writer = SampledSignalsWriter(; Sample = Sample, warn_xruns = warn_xruns),
-    reader = SampledSignalsReader(; Sample = Sample, warn_xruns = warn_xruns),
-    debug = mktemp()[2]
+    reader = SampledSignalsReader(; Sample = Sample, warn_xruns = warn_xruns)
 )
+    debug_file, debug_io = mktemp()
     input_channels_filled =
         fill_max_channels("input", input_device, input_device.input_bounds, input_channels)
     output_channels_filled = fill_max_channels(
@@ -675,7 +676,7 @@ function PortAudioStream(
             output_device,
             output_channels_filled,
             writer,
-            debug;
+            debug_io;
             Sample = Sample,
             chunk_frames = chunk_frames,
         )...,
@@ -685,11 +686,12 @@ function PortAudioStream(
             input_device,
             input_channels_filled,
             reader,
-            debug;
+            debug_io;
             Sample = Sample,
             chunk_frames = chunk_frames,
         )...,
-        debug
+        debug_file,
+        debug_io
     )
 end
 
@@ -761,7 +763,10 @@ function close(stream::PortAudioStream)
         handle_status(Pa_StopStream(pointer_to))
     end
     handle_status(Pa_CloseStream(pointer_to))
-    debug_log = read(stream.debug, String)
+    close(stream.debug_io)
+    debug_log = open(stream.debug_file, "r") do io
+        read(io, String)
+    end
     # this will contain duplicate xrun warnings mentioned above
     if !isempty(debug_log)
         @debug debug_log
