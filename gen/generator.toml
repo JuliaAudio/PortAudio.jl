@@ -1,0 +1,9 @@
+[general]
+library_name = "libportaudio"
+output_file_path = "../src/LibPortAudio.jl"
+module_name = "LibPortAudio"
+jll_pkg_name = "libportaudio_jll"
+export_symbol_prefixes = ["Pa", "pa"]
+
+use_julia_native_enum_type = true
+auto_mutability = true
