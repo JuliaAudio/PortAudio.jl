@@ -145,15 +145,16 @@ if !isempty(devices())
             @test sprint(show, source) ==
                   "2 channel source: $(repr(default_output_device_name))"
             write(stream, stream, 5s)
-            sleep(1)
             @test PaErrorCode(handle_status(Pa_StopStream(stream.pointer_to))) == paNoError
             @test isopen(stream)
             close(stream)
+            sleep(1)
             @test !isopen(stream)
             @test !isopen(sink)
             @test !isopen(source)
             println("done")
         end
+        sleep(1)
         @testset "Samplerate-converting writing" begin
             PortAudioStream(0, 2) do stream
                 write(
@@ -161,19 +162,14 @@ if !isempty(devices())
                     SinSource(eltype(stream), samplerate(stream) * 0.8, [220, 330]),
                     3s,
                 )
-                sleep(1)
                 write(
                     stream,
                     SinSource(eltype(stream), samplerate(stream) * 1.2, [220, 330]),
                     3s,
                 )
-                sleep(1)
             end
         end
-        @testset "Open Device by name" begin
-            PortAudioStream(default_input_device_name, default_output_device_name) do stream
-            end
-        end
+        sleep(1)
         # no way to check that the right data is actually getting read or written here,
         # but at least it's not crashing.
         @testset "Queued Writing" begin
@@ -209,6 +205,9 @@ if !isempty(devices())
                 @test isopen(stream)
             end
             PortAudioStream(default_input_device_name) do stream
+                @test isopen(stream)
+            end
+            PortAudioStream(default_input_device_name, default_output_device_name) do stream
                 @test isopen(stream)
             end
         end
