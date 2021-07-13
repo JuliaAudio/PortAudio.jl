@@ -123,10 +123,10 @@ if !isempty(devices())
             println("Recording...")
             stream = PortAudioStream(2, 0)
             buffer = read(stream, 5s)
-            sleep(1)
             @test size(buffer) ==
                   (round(Int, 5 * samplerate(stream)), nchannels(stream.source))
             close(stream)
+            sleep(1)
             println("Playing back recording...")
             PortAudioStream(0, 2) do stream
                 write(stream, buffer)
@@ -141,9 +141,9 @@ if !isempty(devices())
                   Samplerate: 44100.0Hz
                   2 channel sink: $(repr(default_output_device_name))
                   2 channel source: $(repr(default_input_device_name))"""
-            @test sprint(show, sink) == "2 channel sink: $(repr(default_input_device_name))"
-            @test sprint(show, source) ==
-                  "2 channel source: $(repr(default_output_device_name))"
+            @test sprint(show, source) == "2 channel source: $(repr(default_input_device_name))"
+            @test sprint(show, sink) ==
+                  "2 channel sink: $(repr(default_output_device_name))"
             write(stream, stream, 5s)
             @test PaErrorCode(handle_status(Pa_StopStream(stream.pointer_to))) == paNoError
             @test isopen(stream)
