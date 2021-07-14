@@ -5,7 +5,7 @@ using PortAudio:
     devices,
     get_default_input_index,
     get_default_output_index,
-    get_device_info,
+    get_device,
     get_input_type,
     get_output_type,
     handle_status,
@@ -16,7 +16,8 @@ using PortAudio:
     PortAudioStream,
     safe_load,
     seek_alsa_conf,
-    terminate
+    terminate,
+    name
 using PortAudio.LibPortAudio:
     Pa_AbortStream,
     PaError,
@@ -89,8 +90,8 @@ using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
     @testset "Errors without sound" begin
         @test sprint(showerror, PortAudioException(paNotInitialized)) ==
               "PortAudioException: PortAudio not initialized"
-        @test_throws KeyError("foobarbaz") get_device_info("foobarbaz")
-        @test_throws KeyError(-1) get_device_info(-1)
+        @test_throws KeyError("foobarbaz") get_device("foobarbaz")
+        @test_throws KeyError(-1) get_device(-1)
         @test_throws ArgumentError("Could not find alsa.conf in ()") seek_alsa_conf(())
         @test_logs (:warn, "libportaudio: Output underflowed") handle_status(
             PaError(paOutputUnderflowed),
@@ -103,47 +104,42 @@ using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
         @test_throws MethodError(get_input_type, (Any,)) get_input_type(Any)
         @test_throws MethodError(get_output_type, (Any,)) get_output_type(Any)
     end
-end
 
-if !isempty(devices())
     # make sure we can terminate, then reinitialize
     terminate()
     initialize()
+end
 
-    # these default values are specific to local machines
-    input_index = get_default_input_index()
-    default_input_device = get_device_info(input_index)
-    default_input_device_name = default_input_device.name
-    output_index = get_default_output_index()
-    default_output_device = get_device_info(output_index)
-    default_output_device_name = default_output_device.name
-
+if !isempty(devices())
     @testset "Tests with sound" begin
+        # these default values are specific to local machines
+        input_name = get_device(get_default_input_index()).name
+        output_name = get_device(get_default_output_index()).name
+
         @testset "Interactive tests" begin
             println("Recording...")
-            stream = PortAudioStream(2, 0)
+            stream = PortAudioStream(input_name, output_name, 2, 0; adjust_channels = true)
             buffer = read(stream, 5s)
             @test size(buffer) ==
                   (round(Int, 5 * samplerate(stream)), nchannels(stream.source))
             close(stream)
             sleep(1)
             println("Playing back recording...")
-            PortAudioStream(0, 2) do stream
+            PortAudioStream(input_name, output_name, 0, 2; adjust_channels = true) do stream
                 write(stream, buffer)
             end
             sleep(1)
             println("Testing pass-through")
-            stream = PortAudioStream(2, 2)
+            stream = PortAudioStream(input_name, output_name, 2, 2; adjust_channels = true)
             sink = stream.sink
             source = stream.source
             @test sprint(show, stream) == """
                 PortAudioStream{Float32}
                   Samplerate: 44100.0Hz
-                  2 channel sink: $(repr(default_output_device_name))
-                  2 channel source: $(repr(default_input_device_name))"""
-            @test sprint(show, source) == "2 channel source: $(repr(default_input_device_name))"
-            @test sprint(show, sink) ==
-                  "2 channel sink: $(repr(default_output_device_name))"
+                  2 channel sink: $(repr(input_name))
+                  2 channel source: $(repr(output_name))"""
+            @test sprint(show, source) == "2 channel source: $(repr(output_name))"
+            @test sprint(show, sink) == "2 channel sink: $(repr(input_name))"
             write(stream, stream, 5s)
             @test PaErrorCode(handle_status(Pa_StopStream(stream.pointer_to))) == paNoError
             @test isopen(stream)
@@ -154,14 +150,14 @@ if !isempty(devices())
             @test !isopen(source)
             println("done")
         end
-        sleep(1)
         @testset "Samplerate-converting writing" begin
-            PortAudioStream(0, 2) do stream
+            PortAudioStream(input_name, output_name, 0, 2; adjust_channels = true) do stream
                 write(
                     stream,
                     SinSource(eltype(stream), samplerate(stream) * 0.8, [220, 330]),
                     3s,
                 )
+                println("expected blip")
                 write(
                     stream,
                     SinSource(eltype(stream), samplerate(stream) * 1.2, [220, 330]),
@@ -173,7 +169,7 @@ if !isempty(devices())
         # no way to check that the right data is actually getting read or written here,
         # but at least it's not crashing.
         @testset "Queued Writing" begin
-            PortAudioStream(0, 2) do stream
+            PortAudioStream(input_name, output_name, 0, 2; adjust_channels = true) do stream
                 buffer = SampleBuf(
                     rand(eltype(stream), 48000, nchannels(stream.sink)) * 0.1,
                     samplerate(stream),
@@ -181,13 +177,13 @@ if !isempty(devices())
                 frame_count_1 = @async write(stream, buffer)
                 frame_count_2 = @async write(stream, buffer)
                 @test fetch(frame_count_1) == 48000
-                sleep(1)
+                println("expected blip")
                 @test fetch(frame_count_2) == 48000
-                sleep(1)
             end
+            sleep(1)
         end
         @testset "Queued Reading" begin
-            PortAudioStream(2, 0) do stream
+            PortAudioStream(input_name, output_name, 2, 0; adjust_channels = true) do stream
                 buffer = SampleBuf(
                     rand(eltype(stream), 48000, nchannels(stream.source)) * 0.1,
                     samplerate(stream),
@@ -195,19 +191,18 @@ if !isempty(devices())
                 frame_count_1 = @async read!(stream, buffer)
                 frame_count_2 = @async read!(stream, buffer)
                 @test fetch(frame_count_1) == 48000
-                sleep(1)
                 @test fetch(frame_count_2) == 48000
-                sleep(1)
             end
+            sleep(1)
         end
         @testset "Constructors" begin
-            PortAudioStream(2, max; call_back = C_NULL) do stream
+            PortAudioStream(2, max; adjust_channels = true) do stream
                 @test isopen(stream)
             end
-            PortAudioStream(default_input_device_name) do stream
+            PortAudioStream(output_name; adjust_channels = true) do stream
                 @test isopen(stream)
             end
-            PortAudioStream(default_input_device_name, default_output_device_name) do stream
+            PortAudioStream(input_name, output_name; adjust_channels = true) do stream
                 @test isopen(stream)
             end
         end
@@ -215,20 +210,23 @@ if !isempty(devices())
             big = typemax(Int)
             @test_throws DomainError(
                 typemax(Int),
-                "$big exceeds max input channels for $default_input_device_name",
-            ) PortAudioStream(big, 0)
+                "$big exceeds max input channels for $output_name",
+            ) PortAudioStream(input_name, output_name, big, 0)
             @test_throws ArgumentError("Input or output must have at least 1 channel") PortAudioStream(
+                input_name,
+                output_name,
                 0,
-                0,
+                0;
+                adjust_channels = true,
             )
             @test_throws ArgumentError("""
-            Default sample rate 0 for input $default_input_device_name disagrees with
-            default sample rate 1 for output $default_output_device_name.
+            Default sample rate 0 for input $output_name disagrees with
+            default sample rate 1 for output $input_name.
             Please specify a sample rate.
             """) combine_default_sample_rates(
-                default_input_device,
+                get_device(input_name),
                 0,
-                default_output_device,
+                get_device(output_name),
                 1,
             )
         end
@@ -236,7 +234,7 @@ if !isempty(devices())
             @test PaErrorCode(Pa_HostApiTypeIdToHostApiIndex(paInDevelopment)) ==
                   paHostApiNotFound
             @test Pa_HostApiDeviceIndexToDeviceIndex(paInDevelopment, 0) == 0
-            stream = PortAudioStream(2, 2)
+            stream = PortAudioStream(input_name, output_name, 2, 2; adjust_channels = true)
             pointer_to = stream.pointer_to
             @test handle_status(Pa_GetStreamReadAvailable(pointer_to)) >= 0
             @test handle_status(Pa_GetStreamWriteAvailable(pointer_to)) >= 0

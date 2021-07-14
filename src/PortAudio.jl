@@ -206,11 +206,11 @@ function get_default_output_index()
 end
 
 # we can look up devices by index or name
-function get_device_info(index::Integer)
+function get_device(index::Integer)
     PortAudioDevice(safe_key(Pa_GetDeviceInfo, index), index)
 end
 
-function get_device_info(device_name::AbstractString)
+function get_device(device_name::AbstractString)
     for device in devices()
         potential_match = name(device)
         if potential_match == device_name
@@ -222,7 +222,7 @@ end
 
 function devices()
     # need to use 0 indexing for C
-    map(get_device_info, 0:(handle_status(Pa_GetDeviceCount()) - 1))
+    map(get_device, 0:(handle_status(Pa_GetDeviceCount()) - 1))
 end
 
 # we can handle reading and writing from buffers in a similar way
@@ -231,10 +231,14 @@ function read_or_write(a_function, buffer, use_frames)
         # because we're calling Pa_ReadStream and Pa_WriteStream from separate threads,
         # we put a lock around these calls
         lock(
-            let a_function = a_function, pointer_to = buffer.pointer_to, data = buffer.data, use_frames = use_frames
+            let a_function = a_function,
+                pointer_to = buffer.pointer_to,
+                data = buffer.data,
+                use_frames = use_frames
+
                 () -> a_function(pointer_to, data, use_frames)
-            end, 
-            buffer.stream_lock
+            end,
+            buffer.stream_lock,
         ),
         warn_xruns = buffer.warn_xruns,
     )
@@ -259,11 +263,9 @@ end
 # this call method can make use of read_buffer/write_buffer methods above
 abstract type Scribe end
 
-struct SampledSignalsReader{Sample} <: Scribe
-end
+struct SampledSignalsReader{Sample} <: Scribe end
 
-struct SampledSignalsWriter{Sample} <: Scribe
-end
+struct SampledSignalsWriter{Sample} <: Scribe end
 
 # define on types
 # throw an error if not defined
@@ -299,7 +301,14 @@ end
 # the julia buffer is bigger than the port audio buffer
 # so we need to split it up into chunks
 # we do this the same way for both reading and writing
-function split_up(buffer, julia_buffer, already, frame_count, whole_function, partial_function)
+function split_up(
+    buffer,
+    julia_buffer,
+    already,
+    frame_count,
+    whole_function,
+    partial_function,
+)
     frames_per_buffer = buffer.frames_per_buffer
     # when we're done, we'll have written this many frames
     goal = already + frame_count
@@ -308,8 +317,17 @@ function split_up(buffer, julia_buffer, already, frame_count, whole_function, pa
     # this is how many we'll have written after doing all complete chunks
     even = goal - left
     foreach(
-        let whole_function = whole_function, buffer = buffer, julia_buffer = julia_buffer, frames_per_buffer = frames_per_buffer
-            already -> whole_function(buffer, julia_buffer, (already + 1):(already + frames_per_buffer), frames_per_buffer)
+        let whole_function = whole_function,
+            buffer = buffer,
+            julia_buffer = julia_buffer,
+            frames_per_buffer = frames_per_buffer
+
+            already -> whole_function(
+                buffer,
+                julia_buffer,
+                (already + 1):(already + frames_per_buffer),
+                frames_per_buffer,
+            )
         end,
         # start at the already, keep going until there is less than a chunk left
         already:frames_per_buffer:(even - frames_per_buffer),
@@ -325,18 +343,12 @@ end
 
 # the full version doesn't have to make a view, but the partial version does
 function full_write!(buffer, julia_buffer, julia_range, frames)
-    @inbounds transpose!(
-        buffer.data,
-        view(julia_buffer, julia_range, :),
-    )
+    @inbounds transpose!(buffer.data, view(julia_buffer, julia_range, :))
     write_buffer(buffer, frames)
 end
 
 function partial_write!(buffer, julia_buffer, julia_range, frames)
-    @inbounds transpose!(
-        view(buffer.data, :, 1:frames),
-        view(julia_buffer, julia_range, :),
-    )
+    @inbounds transpose!(view(buffer.data, :, 1:frames), view(julia_buffer, julia_range, :))
     write_buffer(buffer, frames)
 end
 
@@ -347,18 +359,12 @@ end
 # similar to above
 function full_read!(buffer, julia_buffer, julia_range, frames_per_buffer)
     read_buffer(buffer, frames_per_buffer)
-    @inbounds transpose!(
-        view(julia_buffer, julia_range, :),
-        buffer.data,
-    )
+    @inbounds transpose!(view(julia_buffer, julia_range, :), buffer.data)
 end
 
 function partial_read!(buffer, julia_buffer, end_range, left)
     read_buffer(buffer, left)
-    @inbounds transpose!(
-        view(julia_buffer, end_range, :),
-        view(buffer.data, :, 1:left),
-    )
+    @inbounds transpose!(view(julia_buffer, end_range, :), view(buffer.data, :, 1:left))
 end
 
 function (reader::SampledSignalsReader)(buffer, arguments)
@@ -375,18 +381,25 @@ struct Buffer{Sample}
     warn_xruns::Bool
 end
 
-function Buffer(stream_lock, pointer_to, number_of_channels; Sample = Float32, frames_per_buffer = 128, warn_xruns = true)
+function Buffer(
+    stream_lock,
+    pointer_to,
+    number_of_channels;
+    Sample = Float32,
+    frames_per_buffer = 128,
+    warn_xruns = true,
+)
     Buffer{Sample}(
         stream_lock,
         pointer_to,
         zeros(Sample, number_of_channels, frames_per_buffer),
         number_of_channels,
         frames_per_buffer,
-        warn_xruns
+        warn_xruns,
     )
 end
 
-eltype(::Type{Buffer{Sample}}) where Sample = Sample
+eltype(::Type{Buffer{Sample}}) where {Sample} = Sample
 nchannels(buffer::Buffer) = buffer.number_of_channels
 
 # the messanger will send tasks to the scribe
@@ -434,7 +447,7 @@ function messanger_task(
     device_name,
     buffer::Buffer{Sample},
     scribe::Scribe,
-    debug_io
+    debug_io,
 ) where {Sample, Scribe}
     Input = get_input_type(Scribe)
     Output = get_output_type(Scribe)
@@ -446,7 +459,7 @@ function messanger_task(
         buffer,
         scribe,
         input_channel,
-        output_channel
+        output_channel,
     )
     # we will spawn new threads to read from and write to port audio
     # while the reading thread is talking to PortAudio, the writing thread can be setting up, and vice versa
@@ -457,12 +470,9 @@ function messanger_task(
         # xruns will return an error code and send a duplicate warning to stderr
         # since we handle the error codes, we don't need the duplicate warnings
         # so we send them to a debug log
-        () -> redirect_stderr(
-            let messanger = messanger
-                () -> send(messanger)
-            end, 
-            debug_io
-        )
+        () -> redirect_stderr(let messanger = messanger
+            () -> send(messanger)
+        end, debug_io)
     end)
     # makes it able to run on a separate thread
     task.sticky = false
@@ -538,17 +548,21 @@ end
 
 # if users passes max as the number of channels, we fill it in for them
 # this is currently undocumented
-function fill_max_channels(kind, device, bounds, channels)
+function fill_max_channels(kind, device, bounds, channels; adjust_channels = false)
     max_channels = bounds.max_channels
     if channels === max
         max_channels
     elseif channels > max_channels
-        throw(
-            DomainError(
-                channels,
-                "$channels exceeds max $kind channels for $(name(device))",
-            ),
-        )
+        if adjust_channels
+            max_channels
+        else
+            throw(
+                DomainError(
+                    channels,
+                    "$channels exceeds max $kind channels for $(name(device))",
+                ),
+            )
+        end
     else
         channels
     end
@@ -620,16 +634,23 @@ function PortAudioStream(
     stream_lock = ReentrantLock(),
     # this is where you can insert custom readers or writers instead
     writer = SampledSignalsWriter{Sample}(),
-    reader = SampledSignalsReader{Sample}()
+    reader = SampledSignalsReader{Sample}(),
+    adjust_channels = false,
 )
     debug_file, debug_io = mktemp()
-    input_channels_filled =
-        fill_max_channels("input", input_device, input_device.input_bounds, input_channels)
+    input_channels_filled = fill_max_channels(
+        "input",
+        input_device,
+        input_device.input_bounds,
+        input_channels;
+        adjust_channels = adjust_channels,
+    )
     output_channels_filled = fill_max_channels(
         "output",
         output_device,
         output_device.output_bounds,
-        output_channels,
+        output_channels;
+        adjust_channels = adjust_channels,
     )
     # which defaults we use will depend on whether input or output have any channels
     if input_channels_filled > 0
@@ -709,10 +730,10 @@ function PortAudioStream(
                 output_channels_filled;
                 Sample = Sample,
                 frames_per_buffer = frames_per_buffer,
-                warn_xruns = warn_xruns
+                warn_xruns = warn_xruns,
             ),
             writer,
-            debug_io
+            debug_io,
         )...,
         messanger_task(
             input_device.name,
@@ -722,13 +743,13 @@ function PortAudioStream(
                 input_channels_filled;
                 Sample = Sample,
                 frames_per_buffer = frames_per_buffer,
-                warn_xruns = warn_xruns
+                warn_xruns = warn_xruns,
             ),
             reader,
-            debug_io
+            debug_io,
         )...,
         debug_file,
-        debug_io
+        debug_io,
     )
 end
 
@@ -740,8 +761,8 @@ function PortAudioStream(
     keywords...,
 )
     PortAudioStream(
-        get_device_info(in_device_name),
-        get_device_info(out_device_name),
+        get_device(in_device_name),
+        get_device(out_device_name),
         arguments...;
         keywords...,
     )
@@ -762,8 +783,8 @@ function PortAudioStream(input_channels = 2, output_channels = 2; keywords...)
     in_index = get_default_input_index()
     out_index = get_default_output_index()
     PortAudioStream(
-        get_device_info(in_index),
-        get_device_info(out_index),
+        get_device(in_index),
+        get_device(out_index),
         input_channels,
         output_channels;
         keywords...,
