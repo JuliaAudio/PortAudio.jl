@@ -226,7 +226,7 @@ function devices()
 end
 
 # we can handle reading and writing from buffers in a similar way
-function read_or_write(a_function, buffer, use_frames)
+function read_or_write(a_function, buffer, use_frames = buffer.frames_per_buffer)
     handle_status(
         # because we're calling Pa_ReadStream and Pa_WriteStream from separate threads,
         # we put a lock around these calls
@@ -235,7 +235,6 @@ function read_or_write(a_function, buffer, use_frames)
                 pointer_to = buffer.pointer_to,
                 data = buffer.data,
                 use_frames = use_frames
-
                 () -> a_function(pointer_to, data, use_frames)
             end,
             buffer.stream_lock,
@@ -244,11 +243,11 @@ function read_or_write(a_function, buffer, use_frames)
     )
 end
 
-function write_buffer(buffer, use_frames)
+function write_buffer(buffer, use_frames = buffer.frames_per_buffer)
     read_or_write(Pa_WriteStream, buffer, use_frames)
 end
 
-function read_buffer(buffer, use_frames)
+function read_buffer(buffer, use_frames = buffer.frames_per_buffer)
     read_or_write(Pa_ReadStream, buffer, use_frames)
 end
 
@@ -321,12 +320,11 @@ function split_up(
             buffer = buffer,
             julia_buffer = julia_buffer,
             frames_per_buffer = frames_per_buffer
-
             already -> whole_function(
                 buffer,
-                julia_buffer,
-                (already + 1):(already + frames_per_buffer),
                 frames_per_buffer,
+                julia_buffer,
+                (already + 1):(already + frames_per_buffer)
             )
         end,
         # start at the already, keep going until there is less than a chunk left
@@ -336,20 +334,20 @@ function split_up(
     )
     # now we just have to read/write what's left
     if left > 0
-        partial_function(buffer, julia_buffer, (even + 1):goal, left)
+        partial_function(buffer, left, julia_buffer, (even + 1):goal)
     end
     frame_count
 end
 
 # the full version doesn't have to make a view, but the partial version does
-function full_write!(buffer, julia_buffer, julia_range, frames)
+function full_write!(buffer, count, julia_buffer, julia_range)
     @inbounds transpose!(buffer.data, view(julia_buffer, julia_range, :))
-    write_buffer(buffer, frames)
+    write_buffer(buffer, count)
 end
 
-function partial_write!(buffer, julia_buffer, julia_range, frames)
-    @inbounds transpose!(view(buffer.data, :, 1:frames), view(julia_buffer, julia_range, :))
-    write_buffer(buffer, frames)
+function partial_write!(buffer, count, julia_buffer, julia_range)
+    @inbounds transpose!(view(buffer.data, :, 1:count), view(julia_buffer, julia_range, :))
+    write_buffer(buffer, count)
 end
 
 function (writer::SampledSignalsWriter)(buffer, arguments)
@@ -357,14 +355,14 @@ function (writer::SampledSignalsWriter)(buffer, arguments)
 end
 
 # similar to above
-function full_read!(buffer, julia_buffer, julia_range, frames_per_buffer)
-    read_buffer(buffer, frames_per_buffer)
+function full_read!(buffer, count, julia_buffer, julia_range)
+    read_buffer(buffer, count)
     @inbounds transpose!(view(julia_buffer, julia_range, :), buffer.data)
 end
 
-function partial_read!(buffer, julia_buffer, end_range, left)
-    read_buffer(buffer, left)
-    @inbounds transpose!(view(julia_buffer, end_range, :), view(buffer.data, :, 1:left))
+function partial_read!(buffer, count, julia_buffer, julia_range)
+    read_buffer(buffer, count)
+    @inbounds transpose!(view(julia_buffer, julia_range, :), view(buffer.data, :, 1:count))
 end
 
 function (reader::SampledSignalsReader)(buffer, arguments)
