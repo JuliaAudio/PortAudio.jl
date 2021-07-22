@@ -1,5 +1,6 @@
 #!/usr/bin/env julia
 using Base.Sys: iswindows
+using Documenter: doctest
 using PortAudio:
     combine_default_sample_rates,
     devices,
@@ -101,8 +102,6 @@ using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
         )
         Pa_Sleep(1)
         @test Pa_GetSampleSize(paFloat32) == 4
-        @test_throws MethodError(get_input_type, (Any,)) get_input_type(Any)
-        @test_throws MethodError(get_output_type, (Any,)) get_output_type(Any)
     end
 
     # make sure we can terminate, then reinitialize
@@ -196,7 +195,7 @@ if !isempty(devices())
             sleep(1)
         end
         @testset "Constructors" begin
-            PortAudioStream(2, max; adjust_channels = true) do stream
+            PortAudioStream(2, maximum; adjust_channels = true) do stream
                 @test isopen(stream)
             end
             PortAudioStream(output_name; adjust_channels = true) do stream
@@ -210,7 +209,7 @@ if !isempty(devices())
             big = typemax(Int)
             @test_throws DomainError(
                 typemax(Int),
-                "$big exceeds max input channels for $output_name",
+                "$big exceeds maximum input channels for $output_name",
             ) PortAudioStream(input_name, output_name, big, 0)
             @test_throws ArgumentError("Input or output must have at least 1 channel") PortAudioStream(
                 input_name,
@@ -249,4 +248,5 @@ if !isempty(devices())
             ) == paNoError
         end
     end
+    doctest(PortAudio)
 end

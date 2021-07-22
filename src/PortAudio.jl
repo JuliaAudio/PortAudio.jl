@@ -23,7 +23,7 @@ import SampledSignals: nchannels, samplerate, unsafe_read!, unsafe_write
 using SampledSignals: SampleSink, SampleSource
 using Suppressor: @capture_err
 
-export PortAudioStream
+export devices, PortAudioStream
 
 include("libportaudio.jl")
 
@@ -106,12 +106,21 @@ function handle_status(error_number; warn_xruns = true)
     error_number
 end
 
+function write_debug(debug_file)
+    debug_log = open(io -> read(io, String), debug_file, "r")
+    if !isempty(debug_log)
+        @debug debug_log
+    end
+end
+
 function initialize()
     # ALSA will throw extraneous warnings on start-up
     # send them to debug instead
-    debug_message = @capture_err handle_status(Pa_Initialize())
-    if !isempty(debug_message)
-        @debug debug_message
+    mktemp() do debug_file, debug_io
+        redirect_stderr(debug_io) do
+            handle_status(Pa_Initialize())
+        end
+        write_debug(debug_file)
     end
 end
 
@@ -188,7 +197,6 @@ function PortAudioDevice(info::PaDeviceInfo, index)
 end
 
 name(device::PortAudioDevice) = device.name
-# show name and input and output bounds
 function show(io::IO, device::PortAudioDevice)
     print(io, repr(name(device)))
     print(io, ' ')
@@ -220,6 +228,12 @@ function get_device(device_name::AbstractString)
     throw(KeyError(device_name))
 end
 
+"""
+    devices()
+
+List the devices available on your system.
+Devices will be shown with their internal name, and maximum input and output channels.
+"""
 function devices()
     # need to use 0 indexing for C
     map(get_device, 0:(handle_status(Pa_GetDeviceCount()) - 1))
@@ -243,57 +257,53 @@ function read_or_write(a_function, buffer, use_frames = buffer.frames_per_buffer
     )
 end
 
-function write_buffer(buffer, use_frames = buffer.frames_per_buffer)
-    read_or_write(Pa_WriteStream, buffer, use_frames)
-end
+"""
+    abstract type PortAudio.Scribe end
 
-function read_buffer(buffer, use_frames = buffer.frames_per_buffer)
-    read_or_write(Pa_ReadStream, buffer, use_frames)
-end
+A scribe must implement the following:
 
-# these will do the actual reading and writing
-# you can switch out the SampledSignalsReader/Writer defaults if you want more direct access
-# a Scribe must implement the following interface:
-# must have get_input_type and get_output_type methods
-# must overload call for 2 arguments:
-# 1) the buffer
-# 2) a tuple of custom input_channel
-# and return the output type
-# this call method can make use of read_buffer/write_buffer methods above
+  - A method for [`PortAudio.get_input_type`](@ref)
+  - A method for [`PortAudio.get_output_type`](@ref)
+  - A method to call itself on two arguments: a [`PortAudio.Buffer`](@ref) and an input of the input type.
+    This method must return an output of the output type.
+    This method should make use of [`PortAudio.read_buffer!`](@ref) and [`PortAudio.write_buffer`](@ref).
+"""
 abstract type Scribe end
 
-struct SampledSignalsReader{Sample} <: Scribe end
+abstract type SampledSignalsScribe <: Scribe end
 
-struct SampledSignalsWriter{Sample} <: Scribe end
+"""
+    struct PortAudio.SampledSignalsReader
 
-# define on types
-# throw an error if not defined
-function get_input_type(a_type::Type)
-    throw(MethodError(get_input_type, (a_type,)))
-end
-function get_output_type(a_type::Type)
-    throw(MethodError(get_output_type, (a_type,)))
-end
+A [`PortAudio.Scribe`](@ref) that will use the `SampledSignals` package to manage reading data from PortAudio.
+"""
+struct SampledSignalsReader <: SampledSignalsScribe end
 
-# convenience functions so you can pass objects too
-function get_input_type(::Thing) where {Thing}
-    get_input_type(Thing)
-end
+"""
+    struct PortAudio.SampledSignalsReader
 
-function get_output_type(::Thing) where {Thing}
-    get_output_type(Thing)
-end
+A [`PortAudio.Scribe`](@ref) that will use the `SampledSignals` package to manage writing data to PortAudio.
+"""
+struct SampledSignalsWriter <: SampledSignalsScribe end
 
-# SampledSignals input_channel will be a triple of the last 3 arguments to unsafe_read/write
-# we will already have access to the stream itself
-function get_input_type(
-    ::Type{<:Union{<:SampledSignalsReader{Sample}, <:SampledSignalsWriter{Sample}}},
-) where {Sample}
+"""
+    PortAudio.get_input_type(scribe::PortAudio.Scribe, Sample)
+
+Get the input type of a [`PortAudio.Scribe`](@ref) for samples of type `Sample`.
+"""
+function get_input_type(::SampledSignalsScribe, Sample)
+    # SampledSignals input_channel will be a triple of the last 3 arguments to unsafe_read/write
+    # we will already have access to the stream itself
     Tuple{Array{Sample, 2}, Int, Int}
 end
 
-# output is the number of frames read/written
-function get_output_type(::Type{<:Union{SampledSignalsReader, SampledSignalsWriter}})
+"""
+    PortAudio.get_input_type(scribe::PortAudio.Scribe, Sample)
+
+Get the output type of a [`PortAudio.Scribe`](@ref) for samples of type `Sample`.
+"""
+function get_output_type(::SampledSignalsScribe, Sample)
+    # output is the number of frames read/written
     Int
 end
 
@@ -356,12 +366,12 @@ end
 
 # similar to above
 function full_read!(buffer, count, julia_buffer, julia_range)
-    read_buffer(buffer, count)
+    read_buffer!(buffer, count)
     @inbounds transpose!(view(julia_buffer, julia_range, :), buffer.data)
 end
 
 function partial_read!(buffer, count, julia_buffer, julia_range)
-    read_buffer(buffer, count)
+    read_buffer!(buffer, count)
     @inbounds transpose!(view(julia_buffer, julia_range, :), view(buffer.data, :, 1:count))
 end
 
@@ -369,7 +379,13 @@ function (reader::SampledSignalsReader)(buffer, arguments)
     split_up(buffer, arguments..., full_read!, partial_read!)
 end
 
-# a buffer is contains just what we need to do reading/writing
+"""
+    struct PortAudio.Buffer{Sample}
+
+A `PortAudio.Buffer` contains everything you might need to read or write data from or to PortAudio.
+The `data` field contains the raw data in the buffer.
+Use [`PortAudio.write_buffer`](@ref) to write data to PortAudio, and [`PortAudio.read_buffer!`](@ref) to read data from PortAudio.
+"""
 struct Buffer{Sample}
     stream_lock::ReentrantLock
     pointer_to::Ptr{PaStream}
@@ -399,6 +415,24 @@ end
 
 eltype(::Type{Buffer{Sample}}) where {Sample} = Sample
 nchannels(buffer::Buffer) = buffer.number_of_channels
+
+"""
+    PortAudio.write_buffer(buffer, use_frames = buffer.frames_per_buffer)
+
+Write a number of frames (`use_frames`) from a [`PortAudio.Buffer`](@ref) to PortAudio.
+"""
+function write_buffer(buffer::Buffer, use_frames = buffer.frames_per_buffer)
+    read_or_write(Pa_WriteStream, buffer, use_frames)
+end
+
+"""
+    PortAudio.read_buffer!(buffer::Buffer, use_frames = buffer.frames_per_buffer)
+
+Read a number of frames (`use_frames`) from PortAudio to a [`PortAudio.Buffer`](@ref).
+"""
+function read_buffer!(buffer, use_frames = buffer.frames_per_buffer)
+    read_or_write(Pa_ReadStream, buffer, use_frames)
+end
 
 # the messanger will send tasks to the scribe
 # the scribe will read/write from the buffer
@@ -447,8 +481,8 @@ function messanger_task(
     scribe::Scribe,
     debug_io,
 ) where {Sample, Scribe}
-    Input = get_input_type(Scribe)
-    Output = get_output_type(Scribe)
+    Input = get_input_type(scribe, Sample)
+    Output = get_output_type(scribe, Sample)
     input_channel = Channel{Input}(0)
     output_channel = Channel{Output}(0)
     # unbuffered channels so putting and taking will block till everyone's ready
@@ -544,11 +578,9 @@ function make_parameters(
     end
 end
 
-# if users passes max as the number of channels, we fill it in for them
-# this is currently undocumented
 function fill_max_channels(kind, device, bounds, channels; adjust_channels = false)
     max_channels = bounds.max_channels
-    if channels === max
+    if channels === maximum
         max_channels
     elseif channels > max_channels
         if adjust_channels
@@ -557,7 +589,7 @@ function fill_max_channels(kind, device, bounds, channels; adjust_channels = fal
             throw(
                 DomainError(
                     channels,
-                    "$channels exceeds max $kind channels for $(name(device))",
+                    "$channels exceeds maximum $kind channels for $(name(device))",
                 ),
             )
         end
@@ -566,8 +598,6 @@ function fill_max_channels(kind, device, bounds, channels; adjust_channels = fal
     end
 end
 
-# we can only have one sample rate
-# so if the default sample rates differ, throw an error
 function combine_default_sample_rates(
     input_device,
     input_sample_rate,
@@ -594,46 +624,111 @@ end
     PortAudioStream(duplex_device, input_channels = 2, output_channels = 2; options...)
     PortAudioStream(input_device, output_device, input_channels = 2, output_channels = 2; options...)
 
-Audio devices can either be `PortAudioDevice` instances as returned
-by `PortAudio.devices()`, or strings with the device name as reported by the
-operating system. If a single `duplex_device` is given it will be used for both
-input and output. If no devices are given the system default devices will be
-used.
+Audio devices can either be `PortAudioDevice` instances as returned by [`devices`](@ref), or strings with the device name as reported by the operating system.
+Set `input_channels` to `0` for an output only stream; set `output_channels` to `0` for an input only steam.
+If you pass the function `maximum` instead of a number of channels, use the maximum channels allowed by the corresponding device.
+If a single `duplex_device` is given, it will be used for both input and output.
+If no devices are given, the system default devices will be used.
+
+The `PortAudioStream` type supports all the stream and buffer features defined [SampledSignals.jl](https://github.com/JuliaAudio/SampledSignals.jl) by default.
+For example, if you load SampledSignals with `using SampledSignals` you can read 5 seconds to a buffer with `buf = read(stream, 5s)`, regardless of the sample rate of the device.
+`write(stream, stream)` will set up a loopback that will read from the input and play it back on the output.
 
 Options:
 
-  - `Sample`: Sample type of the audio stream (defaults to Float32)
-  - `samplerate`: Sample rate (defaults to device sample rate)
-  - `latency`: Requested latency. Stream could underrun when too low, consider
-    using provided device defaults
-  - `warn_xruns`: Display a warning if there is a stream overrun or underrun, which
-    often happens when Julia is compiling, or with a particularly large
-    GC run. This is true by default.
-    Only effects duplex streams.
+  - `adjust_channels = false`: If set to `true`, if either `input_channels` or `output_channels` exceeds the corresponding device maximum, adjust down to the maximum.
+  - `call_back = C_NULL`: The PortAudio call-back function.
+    Currently, passing anything except `C_NULL` is unsupported.
+  - `eltype = Float32`: Sample type of the audio stream
+  - `flags = PortAudio.paNoFlag`: PortAudio flags
+  - `frames_per_buffer = 128`: the number of frames per buffer
+  - `input_info = C_NULL`: host API specific stream info for the input device.
+    Currently, passing anything except `C_NULL` is unsupported.
+  - `latency = nothing`: Requested latency. Stream could underrun when too low, consider using the defaults.  If left as `nothing`, use the defaults below:
+    - For input/output only streams, use the default high latency.
+    - For duplex streams, use the max of the default high latency for the input and output devices.
+  - `output_info = C_NULL`: host API specific stream info for the output device.
+    Currently, passing anything except `C_NULL` is unsupported.
+  - `reader = PortAudio.SampledSignalsReader()`: the scribe that will read input.
+    Defaults to a [`PortAudio.SampledSignalsReader`](@ref).
+    Users can pass custom scribes; see [`PortAudio.Scribe`](@ref).
+  - `samplerate = nothing`: Sample rate. If left as `nothing`, use the defaults below:
+    - For input/output only streams, use the corresponding input/output device default sample rate.
+    - For duplex streams, use the default sample rate if the default sample rates for the input and output devices match, otherwise throw an error.
+  - `warn_xruns = true`: Display a warning if there is a stream overrun or underrun, which often happens when Julia is compiling, or with a particularly large GC run.
+    Only affects duplex streams.
+  - `writer = PortAudio.SampledSignalsWriter()`: the scribe that will write output.
+    Defaults to a [`PortAudio.SampledSignalsReader`](@ref).
+    Users can pass custom scribes; see [`PortAudio.Scribe`](@ref).
+
+## Examples:
+
+Set up an audio pass-through from microphone to speaker
+
+```julia
+julia> using PortAudio, SampledSignals
+
+julia> stream = PortAudioStream(2, 2; warn_xruns = false);
+
+julia> try
+            # cancel with Ctrl-C
+            write(stream, stream, 2s)
+        finally
+            close(stream)
+        end
+```
+
+Use `do` syntax to auto-close the stream
+
+```julia
+julia> using PortAudio, SampledSignals
+
+julia> PortAudioStream(2, 2; warn_xruns = false) do stream
+            write(stream, stream, 2s)
+        end
+```
+
+Open devices by name
+
+```julia
+using PortAudio, SampledSignals
+PortAudioStream("Built-in Microph", "Built-in Output"; warn_xruns = false) do stream
+    write(stream, stream, 2s)
+end
+2 s
+```
+
+Record 10 seconds of audio and save to an ogg file
+
+```julia
+julia> using PortAudio, SampledSignals, LibSndFile
+
+julia> PortAudioStream(2, 0; warn_xruns = false) do stream
+            buf = read(stream, 10s)
+            save(joinpath(tempname(), ".ogg"), buf)
+        end
+2 s
+```
 """
 function PortAudioStream(
     input_device::PortAudioDevice,
     output_device::PortAudioDevice,
     input_channels = 2,
     output_channels = 2;
-    Sample = Float32,
-    # for several keywords, nothing means we will fill them with defaults
-    samplerate = nothing,
-    latency = nothing,
-    warn_xruns = true,
-    # these defaults are currently undocumented
-    # data is passed to and from portaudio in chunks with this many frames
-    frames_per_buffer = 128,
-    flags = paNoFlag,
-    call_back = C_NULL,
-    user_data = C_NULL,
-    input_info = C_NULL,
-    output_info = C_NULL,
-    stream_lock = ReentrantLock(),
-    # this is where you can insert custom readers or writers instead
-    writer = SampledSignalsWriter{Sample}(),
-    reader = SampledSignalsReader{Sample}(),
+    eltype = Float32,
     adjust_channels = false,
+    call_back = C_NULL,
+    flags = paNoFlag,
+    frames_per_buffer = 128,
+    input_info = C_NULL,
+    latency = nothing,
+    output_info = C_NULL,
+    reader = SampledSignalsReader(),
+    samplerate = nothing,
+    stream_lock = ReentrantLock(),
+    user_data = C_NULL,
+    warn_xruns = true,
+    writer = SampledSignalsWriter(),   
 )
     debug_file, debug_io = mktemp()
     input_channels_filled = fill_max_channels(
@@ -650,11 +745,9 @@ function PortAudioStream(
         output_channels;
         adjust_channels = adjust_channels,
     )
-    # which defaults we use will depend on whether input or output have any channels
     if input_channels_filled > 0
         if output_channels_filled > 0
             if latency === nothing
-                # use the max of high latency for input and output
                 latency = max(
                     input_device.input_bounds.high_latency,
                     output_device.output_bounds.high_latency,
@@ -703,7 +796,7 @@ function PortAudioStream(
                 output_device,
                 output_channels_filled,
                 latency;
-                Sample = Sample,
+                Sample = eltype,
                 host_api_specific_stream_info = output_info,
             ),
             samplerate,
@@ -718,15 +811,14 @@ function PortAudioStream(
     PortAudioStream(
         samplerate,
         pointer_to,
-        # we need to keep track of the tasks
-        # so we can wait for them to finish and catch errors
+        # we need to keep track of the tasks so we can wait for them to finish and catch errors
         messanger_task(
             output_device.name,
             Buffer(
                 stream_lock,
                 pointer_to,
                 output_channels_filled;
-                Sample = Sample,
+                Sample = eltype,
                 frames_per_buffer = frames_per_buffer,
                 warn_xruns = warn_xruns,
             ),
@@ -739,7 +831,7 @@ function PortAudioStream(
                 stream_lock,
                 pointer_to,
                 input_channels_filled;
-                Sample = Sample,
+                Sample = eltype,
                 frames_per_buffer = frames_per_buffer,
                 warn_xruns = warn_xruns,
             ),
@@ -814,10 +906,7 @@ function close(stream::PortAudioStream)
     # close the debug log and then read the file
     # this will contain duplicate xrun warnings mentioned above
     close(stream.debug_io)
-    debug_log = open(io -> read(io, String), stream.debug_file, "r")
-    if !isempty(debug_log)
-        @debug debug_log
-    end
+    write_debug(stream.debug_file)
 end
 
 function isopen(pointer_to::Ptr{PaStream})
@@ -940,7 +1029,7 @@ function show(io::IO, sink_or_source::Union{PortAudioSink, PortAudioSource})
 end
 
 # both reading and writing will outsource to the readers or writers
-# so we just need to pass input_channel in and take output_channel out
+# so we just need to pass inputs in and take outputs out
 # SampledSignals can take care of this feeding for us
 function exchange(messanger, arguments...)
     put!(messanger.input_channel, arguments)
