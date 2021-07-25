@@ -2,6 +2,7 @@
 *.o
 deps/deps.jl
 deps/build.log
+docs/build
 *.wav
 *.flac
 *.cov
