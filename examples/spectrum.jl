@@ -10,7 +10,7 @@ const stream = PortAudioStream(1, 0)
 const buf = read(stream, N)
 const fmin = 0Hz
 const fmax = 10000Hz
-const fs = Float32[float(f) for f in domain(fft(buf)[fmin..fmax])]
+const fs = Float32[float(f+(fmin/oneunit(fmin)) for f in domain(fft(buf)[fmin..fmax])]
 
 while true
     read!(stream, buf)
