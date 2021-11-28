@@ -100,3 +100,15 @@ julia> buf = read(stream, 10s)
 julia> close(stream)
 
 julia> save(joinpath(homedir(), "Desktop", "myvoice.ogg"), buf)
+```
+
+### Play an audio signal through the default sound output device
+
+```julia
+using PortAudio, SampledSignals
+S = 8192 # sampling rate (samples / second)
+x = cos.(2pi*(1:2S)*440/S) # A440 tone for 2 seconds
+PortAudioStream(0, 2; samplerate=Float64(S)) do stream
+    write(stream, x)
+end
+```
