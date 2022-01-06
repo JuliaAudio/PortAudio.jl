@@ -424,9 +424,9 @@ function read_buffer!(buffer, use_frames = buffer.frames_per_buffer)
     read_or_write(Pa_ReadStream, buffer, use_frames)
 end
 
-# the messanger will send tasks to the scribe
+# the messenger will send tasks to the scribe
 # the scribe will read/write from the buffer
-struct Messanger{Sample, Scribe, Input, Output}
+struct Messenger{Sample, Scribe, Input, Output}
     device_name::String
     buffer::Buffer{Sample}
     scribe::Scribe
@@ -434,18 +434,18 @@ struct Messanger{Sample, Scribe, Input, Output}
     output_channel::Channel{Output}
 end
 
-eltype(::Type{Messanger{Sample}}) where {Sample} = Sample
-name(messanger::Messanger) = messanger.device_name
-nchannels(messanger::Messanger) = nchannels(messanger.buffer)
+eltype(::Type{Messenger{Sample}}) where {Sample} = Sample
+name(messenger::Messenger) = messenger.device_name
+nchannels(messenger::Messenger) = nchannels(messenger.buffer)
 
 # the scribe will be running on a separate thread in the background
 # alternating transposing and
 # waiting to pass inputs and outputs back and forth to PortAudio
-function send(messanger)
-    buffer = messanger.buffer
-    scribe = messanger.scribe
-    input_channel = messanger.input_channel
-    output_channel = messanger.output_channel
+function send(messenger)
+    buffer = messenger.buffer
+    scribe = messenger.scribe
+    input_channel = messenger.input_channel
+    output_channel = messenger.output_channel
     while true
         input = try
             take!(input_channel)
@@ -464,8 +464,8 @@ end
 # convenience method
 has_channels(something) = nchannels(something) > 0
 
-# create the messanger, and start the scribe on a separate task
-function messanger_task(
+# create the messenger, and start the scribe on a separate task
+function messenger_task(
     device_name,
     buffer::Buffer{Sample},
     scribe::Scribe
@@ -475,7 +475,7 @@ function messanger_task(
     input_channel = Channel{Input}(0)
     output_channel = Channel{Output}(0)
     # unbuffered channels so putting and taking will block till everyone's ready
-    messanger = Messanger{Sample, Scribe, Input, Output}(
+    messenger = Messenger{Sample, Scribe, Input, Output}(
         device_name,
         buffer,
         scribe,
@@ -487,12 +487,12 @@ function messanger_task(
     # start the scribe thread when its created
     # if there's channels at all
     # we can't make the task a field of the buffer, because the task uses the buffer
-    task = Task(let messanger = messanger
+    task = Task(let messenger = messenger
         () -> begin
             # xruns will return an error code and send a duplicate warning to stderr
             # since we handle the error codes, we don't need the duplicate warnings
             # so we send them to a debug log
-            log = @capture_err send(messanger)
+            log = @capture_err send(messenger)
             if !isempty(log)
                 @debug log
             end
@@ -508,13 +508,13 @@ function messanger_task(
         close(input_channel)
         close(output_channel)
     end
-    messanger, task
+    messenger, task
 end
 
-function fetch_messanger(messanger, task)
-    if has_channels(messanger)
+function fetch_messanger(messenger, task)
+    if has_channels(messenger)
         # this will shut down the channels, which will shut down the thread
-        close(messanger.input_channel)
+        close(messenger.input_channel)
         # wait for tasks to finish to make sure any errors get caught
         wait(task)
         # output channel will close because it is bound to the task
@@ -527,13 +527,13 @@ end
 # PortAudioStream
 #
 
-struct PortAudioStream{SinkMessanger, SourceMessanger}
+struct PortAudioStream{SinkMessenger, SourceMessenger}
     sample_rate::Float64
     # pointer to the c object
     pointer_to::Ptr{PaStream}
-    sink_messanger::SinkMessanger
+    sink_messanger::SinkMessenger
     sink_task::Task
-    source_messanger::SourceMessanger
+    source_messanger::SourceMessenger
     source_task::Task
 end
 
@@ -803,7 +803,7 @@ function PortAudioStream(
         samplerate,
         pointer_to,
         # we need to keep track of the tasks so we can wait for them to finish and catch errors
-        messanger_task(
+        messenger_task(
             output_device.name,
             Buffer(
                 stream_lock,
@@ -815,7 +815,7 @@ function PortAudioStream(
             ),
             writer,
         )...,
-        messanger_task(
+        messenger_task(
             input_device.name,
             Buffer(
                 stream_lock,
@@ -906,7 +906,7 @@ isopen(stream::PortAudioStream) = isopen(stream.pointer_to)
 
 samplerate(stream::PortAudioStream) = stream.sample_rate
 function eltype(
-    ::Type{<:PortAudioStream{<:Messanger{Sample}, <:Messanger{Sample}}},
+    ::Type{<:PortAudioStream{<:Messenger{Sample}, <:Messenger{Sample}}},
 ) where {Sample}
     Sample
 end
@@ -956,8 +956,8 @@ end
 # only defined for SampledSignals scribes
 function getproperty(
     stream::PortAudioStream{
-        <:Messanger{<:Any, <:SampledSignalsWriter},
-        <:Messanger{<:Any, <:SampledSignalsReader},
+        <:Messenger{<:Any, <:SampledSignalsWriter},
+        <:Messenger{<:Any, <:SampledSignalsReader},
     },
     property::Symbol,
 )
@@ -982,8 +982,8 @@ end
 function eltype(
     ::Type{
         <:Union{
-            <:PortAudioSink{<:Messanger{Sample}, <:Messanger{Sample}},
-            <:PortAudioSource{<:Messanger{Sample}, <:Messanger{Sample}},
+            <:PortAudioSink{<:Messenger{Sample}, <:Messenger{Sample}},
+            <:PortAudioSource{<:Messenger{Sample}, <:Messenger{Sample}},
         },
     },
 ) where {Sample}
@@ -1014,14 +1014,14 @@ end
 # both reading and writing will outsource to the readers or writers
 # so we just need to pass inputs in and take outputs out
 # SampledSignals can take care of this feeding for us
-function exchange(messanger, arguments...)
-    put!(messanger.input_channel, arguments)
-    take!(messanger.output_channel)
+function exchange(messenger, arguments...)
+    put!(messenger.input_channel, arguments)
+    take!(messenger.output_channel)
 end
 
 # these will only work with sampledsignals scribes
 function unsafe_write(
-    sink::PortAudioSink{<:Messanger{<:Any, <:SampledSignalsWriter}},
+    sink::PortAudioSink{<:Messenger{<:Any, <:SampledSignalsWriter}},
     julia_buffer::Array,
     already,
     frame_count,
@@ -1030,7 +1030,7 @@ function unsafe_write(
 end
 
 function unsafe_read!(
-    source::PortAudioSource{<:Any, <:Messanger{<:Any, <:SampledSignalsReader}},
+    source::PortAudioSource{<:Any, <:Messenger{<:Any, <:SampledSignalsReader}},
     julia_buffer::Array,
     already,
     frame_count,
