@@ -446,17 +446,7 @@ function send(messenger)
     scribe = messenger.scribe
     input_channel = messenger.input_channel
     output_channel = messenger.output_channel
-    while true
-        input = try
-            take!(input_channel)
-        catch an_error
-            # if the input channel is closed, the scribe knows its done
-            if an_error isa InvalidStateException && an_error.state === :closed
-                break
-            else
-                rethrow(an_error)
-            end
-        end
+    for input in input_channel
         put!(output_channel, scribe(buffer, input))
     end
 end
@@ -488,15 +478,11 @@ function messenger_task(
     # if there's channels at all
     # we can't make the task a field of the buffer, because the task uses the buffer
     task = Task(let messenger = messenger
-        () -> begin
-            # xruns will return an error code and send a duplicate warning to stderr
-            # since we handle the error codes, we don't need the duplicate warnings
-            # so we send them to a debug log
-            log = @capture_err send(messenger)
-            if !isempty(log)
-                @debug log
-            end
-        end
+        # xruns will return an error code and send a duplicate warning to stderr
+        # since we handle the error codes, we don't need the duplicate warnings
+        # so we could send them to a debug log
+        # but that causes problems when done from multiple threads
+        () -> send(messenger)
     end)
     # makes it able to run on a separate thread
     task.sticky = false
