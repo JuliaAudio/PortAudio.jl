@@ -379,7 +379,7 @@ Use [`PortAudio.write_buffer`](@ref) to write data to PortAudio, and [`PortAudio
 struct Buffer{Sample}
     stream_lock::ReentrantLock
     pointer_to::Ptr{PaStream}
-    data::Array{Sample}
+    data::Array{Sample, 2}
     number_of_channels::Int
     frames_per_buffer::Int
     warn_xruns::Bool
