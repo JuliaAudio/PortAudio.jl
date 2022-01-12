@@ -85,6 +85,8 @@ end
 ```julia
 julia> using PortAudio, SampledSignals, LibSndFile
 
+julia> using FileIO: load, save, loadstreaming, savestreaming
+
 julia> stream = PortAudioStream("Built-in Microph", 2, 0)
 PortAudio.PortAudioStream{Float32,SIUnits.SIQuantity{Int64,0,0,-1,0,0,0,0,0,0}}
   Samplerate: 48000 s⁻¹
