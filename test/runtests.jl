@@ -247,6 +247,14 @@ if !isempty(devices())
                 handle_status(Pa_SetStreamFinishedCallback(pointer_to, C_NULL)),
             ) == paNoError
         end
+        @testset "Make sure examples run" begin
+            include(joinpath(pkgdir(PortAudio), "examples", "audiometer.jl"))
+            include(joinpath(pkgdir(PortAudio), "examples", "lilyplay.jl"))
+            include(joinpath(pkgdir(PortAudio), "examples", "measure_latency.jl"))
+            include(joinpath(pkgdir(PortAudio), "examples", "spectrum.jl"))
+            # include("waterfall_heatmap.jl")
+            # include("waterfall_lines.jl")
+        end
     end
     doctest(PortAudio)
 end

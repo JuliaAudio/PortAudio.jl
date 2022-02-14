@@ -19,8 +19,11 @@ Suppressor = "0.2"
 
 [extras]
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+DSP = "717857b8-e6f2-59f4-9121-6e50c889abd2"
+FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
+GR = "28b8d3ca-fb5f-59d9-8090-bfdbd6d07a71"
 LibSndFile = "b13ce0c6-77b0-50c6-a2db-140568b8d1a5"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Documenter", "LibSndFile", "Test"]
+test = ["DSP", "Documenter", "FFTW", "GR", "LibSndFile", "Test"]

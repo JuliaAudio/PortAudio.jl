@@ -1,22 +1,8 @@
-using Distributed, PortAudio
+using PortAudio
+using Base.Threads: @spawn
 
 # Modified from Jiahao Chen's example in the obsolete AudioIO module.
 # Will use first output device found in system's listing or DEFAULTDEVICE if set below
-const DEFAULTDEVICE = -1
-
-function paudio()
-    devs = PortAudio.devices()
-    if DEFAULTDEVICE < 0
-        devnum = findfirst(x -> x.maxoutchans > 0, devs)
-        (devnum == nothing) && error("No output device for audio found")
-    else
-        devnum = DEFAULTDEVICE + 1
-    end
-    return ostream = PortAudioStream(devs[devnum].name, 0, 2)
-end
-
-play(ostream, sample::Array{Float64, 1}) = write(ostream, sample)
-play(ostr, sample::Array{Int64, 1}) = play(ostr, Float64.(sample))
 
 struct Note{S <: Real, T <: Real}
     pitch::S
@@ -35,14 +21,13 @@ function play(
     if !A.sustained
         decay_length = div(length(timesamples), 5)
         v[(end - decay_length):(end - 1)] =
-            v[(end - decay_length):(end - 1)] .* LinRange(1, 0, decay_length)
+        v[(end - decay_length):(end - 1)] .* LinRange(1, 0, decay_length)
     end
-    play(ostream, v)
-    sleep(A.duration)
+    write(ostream, v)
 end
 
 function parsevoice(melody::String; tempo = 132, beatunit = 4, lyrics = nothing)
-    ostream = paudio() # initialize audio for output
+    ostream = PortAudioStream(0, 2; warn_xruns = false) # initialize audio for output
     lyrics_syllables = lyrics == nothing ? nothing : split(lyrics)
     lyrics_syllables != nothing && (lyrics_syllables[end] *= "\n")
     note_idx = 1
