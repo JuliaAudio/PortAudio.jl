@@ -1,13 +1,19 @@
+#=
+This example synthesizes a bit of Beethoven's Ode to Joy chorus
+where the note sequence is stored in the concise LilyPond text format:
+http://lilypond.org/
+=#
+
 using Distributed, PortAudio
 
 # Modified from Jiahao Chen's example in the obsolete AudioIO module.
-# Will use first output device found in system's listing or DEFAULTDEVICE if set below
+# Use first output device found in system's listing or DEFAULTDEVICE if set below.
 const DEFAULTDEVICE = -1
 
 function paudio()
     devs = PortAudio.devices()
     if DEFAULTDEVICE < 0
-        devnum = findfirst(x -> x.maxoutchans > 0, devs)
+        devnum = findfirst(x -> x.output_bounds.max_channels > 0, devs)
         (devnum == nothing) && error("No output device for audio found")
     else
         devnum = DEFAULTDEVICE + 1
