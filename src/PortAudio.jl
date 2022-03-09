@@ -1005,6 +1005,9 @@ function exchange(messenger, arguments...)
     take!(messenger.output_channel)
 end
 
+as_matrix(matrix::Matrix) = matrix
+as_matrix(vector::Vector) = reshape(vector, length(vector), 1)
+
 # these will only work with sampledsignals scribes
 function unsafe_write(
     sink::PortAudioSink{<:Messenger{<:Any, <:SampledSignalsWriter}},
@@ -1012,7 +1015,7 @@ function unsafe_write(
     already,
     frame_count,
 )
-    exchange(sink.stream.sink_messanger, julia_buffer, already, frame_count)
+    exchange(sink.stream.sink_messanger, as_matrix(julia_buffer), already, frame_count)
 end
 
 function unsafe_read!(
@@ -1021,7 +1024,7 @@ function unsafe_read!(
     already,
     frame_count,
 )
-    exchange(source.stream.source_messanger, julia_buffer, already, frame_count)
+    exchange(source.stream.source_messanger, as_matrix(julia_buffer), already, frame_count)
 end
 
 end # module PortAudio

@@ -4,18 +4,23 @@ using PortAudio
 Continuously read from the default audio input and plot an
 ASCII level/peak meter
 """
-function micmeter(metersize)
-    mic = PortAudioStream(1, 0; latency = 0.1)
-
-    signalmax = zero(eltype(mic))
-    println("Press Ctrl-C to quit")
-    while true
-        block = read(mic, 512)
-        blockmax = maximum(abs.(block)) # find the maximum value in the block
-        signalmax = max(signalmax, blockmax) # keep the maximum value ever
-        print("\r") # reset the cursor to the beginning of the line
-        printmeter(metersize, blockmax, signalmax)
+function micmeter(seconds; metersize = 80)
+    PortAudioStream(1, 0; latency = 0.1) do mic
+        done = false
+        signalmax = zero(eltype(mic))
+        @sync begin
+            @async while !done
+                block = read(mic, 512)
+                blockmax = maximum(abs.(block)) # find the maximum value in the block
+                signalmax = max(signalmax, blockmax) # keep the maximum value ever
+                print("\r") # reset the cursor to the beginning of the line
+                printmeter(metersize, blockmax, signalmax)
+            end
+            sleep(seconds)
+            done = true
+        end
     end
+    nothing
 end
 
 """
@@ -52,4 +57,4 @@ function barcolor(metersize, position)
     end
 end
 
-micmeter(80)
+micmeter(5)
