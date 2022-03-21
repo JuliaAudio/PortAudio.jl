@@ -27,19 +27,8 @@ function pitch_halver(x) # decrease pitch by one octave via FFT
     return out
 end
 
-const N = 1024 # buffer size
-const in_stream = PortAudioStream(1, 0) # default input device
-const out_stream = PortAudioStream(0, 1) # default output device
-const buf = read(in_stream, N) # warm-up
-const fmin = 0Hz
-const fmax = 4000Hz
-const fs = Float32[float(f) for f in domain(fft(buf)[fmin..fmax])]
 
-while true
-    read!(in_stream, buf)
-    out = pitch_halver(buf) # decrease pitch by one octave
-    write(out_stream, out)
-
+function plotter(buf, out, N, fmin, fmax, fs)
     bmax = 0.1 * ceil(maximum(abs, buf) / 0.1)
     xticks = [1, N]; ylims = (-1,1) .* bmax; yticks = (-1:1)*bmax
     p1 = plot(buf; xticks, ylims, yticks, title="input")
@@ -53,5 +42,45 @@ while true
     Y = abs.(fft(out)[fmin..fmax])
     p4 = plot(fs, Y; xlims, ylims, yticks)
 
-    plot(p1, p2, p3, p4); gui()
+    plot(p1, p2, p3, p4)
 end
+
+
+"""
+    octave_shift(seconds; N, ...)
+
+Shift audio down by one octave.
+
+# Input
+* `seconds` : how long to run in seconds; defaults to 600 (10 minutes)
+
+# Options
+* `N` : buffer size; default 1024 samples
+* `fmin`,`fmax` : range of frequencies to display; default 0Hz to 4000Hz
+"""
+function octave_shift(
+    seconds::Number = 600;
+    N::Int = 1024,
+    fmin = 0Hz,
+    fmax = 4000Hz,
+    in_stream = PortAudioStream(1, 0), # default input device
+    out_stream = PortAudioStream(0, 1), # default output device
+    buf = read(in_stream, N), # warm-up
+    fs = Float32[float(f) for f in domain(fft(buf)[fmin..fmax])],
+)
+
+    done = false
+    @sync begin
+        @async while !done
+            read!(in_stream, buf)
+            out = pitch_halver(buf) # decrease pitch by one octave
+            write(out_stream, out)
+            plotter(buf, out, N, fmin, fmax, fs); gui()
+        end
+        sleep(seconds)
+        done = true
+    end
+    nothing
+end
+
+octave_shift(5)
