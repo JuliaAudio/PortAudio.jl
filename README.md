@@ -83,7 +83,10 @@ end
 ### Record 10 seconds of audio and save to an ogg file
 
 ```julia
-julia> using PortAudio, SampledSignals, LibSndFile
+julia> import LibSndFile # must be in Manifest for FileIO.save to work
+julia> using PortAudio: PortAudioStream
+julia> using SampledSignals: s
+julia> using FileIO: save
 
 julia> using FileIO: load, save, loadstreaming, savestreaming
 
