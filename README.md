@@ -83,9 +83,15 @@ end
 ### Record 10 seconds of audio and save to an ogg file
 
 ```julia
-julia> using PortAudio, SampledSignals, LibSndFile
+julia> import LibSndFile # must be in Manifest for FileIO.save to work
 
-julia> stream = PortAudioStream("Built-in Microph", 2, 0)
+julia> using PortAudio: PortAudioStream
+
+julia> using SampledSignals: s
+
+julia> using FileIO: save
+
+julia> stream = PortAudioStream(1, 0) # default input (e.g., built-in microphone)
 PortAudio.PortAudioStream{Float32,SIUnits.SIQuantity{Int64,0,0,-1,0,0,0,0,0,0}}
   Samplerate: 48000 s⁻¹
   Buffer Size: 4096 frames
