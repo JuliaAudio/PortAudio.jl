@@ -88,7 +88,6 @@ julia> using PortAudio: PortAudioStream
 julia> using SampledSignals: s
 julia> using FileIO: save
 
-julia> using FileIO: load, save, loadstreaming, savestreaming
 
 julia> stream = PortAudioStream("Built-in Microph", 2, 0)
 PortAudio.PortAudioStream{Float32,SIUnits.SIQuantity{Int64,0,0,-1,0,0,0,0,0,0}}
