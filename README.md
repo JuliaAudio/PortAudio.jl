@@ -89,7 +89,7 @@ julia> using SampledSignals: s
 julia> using FileIO: save
 
 
-julia> stream = PortAudioStream("Built-in Microph", 2, 0)
+julia> stream = stream = PortAudioStream(1, 0) # default input (e.g., built-in microphone)
 PortAudio.PortAudioStream{Float32,SIUnits.SIQuantity{Int64,0,0,-1,0,0,0,0,0,0}}
   Samplerate: 48000 s⁻¹
   Buffer Size: 4096 frames
