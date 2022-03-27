@@ -10,10 +10,10 @@ PortAudio.jl is a wrapper for [libportaudio](http://www.portaudio.com/), which g
 
 ## Opening a stream
 
-The easiest way to open a source or sink is with the default `PortAudioStream()` constructor, which will open a 2-in, 2-out stream to your system's default device(s). The constructor can also take the input and output channel counts as positional arguments, or a variety of other keyword arguments.
+The easiest way to open a source or sink is with the default `PortAudioStream()` constructor, which will open a 2-in, 2-out stream to your system's default device(s). The constructor can also take the input and output channel counts as positional arguments, or a variety of other keyword arguments. If you don't specify latency and sample rate, PortAudio will use device defaults.
 
 ```julia
-PortAudioStream(inchans=2, outchans=2; eltype=Float32, samplerate=48000Hz, latency=0.1, synced=false)
+PortAudioStream(inchans=2, outchans=2; eltype=Float32, latency = nothing, samplerate = nothing)
 ```
 
 You can open a specific device by adding it as the first argument, either as a `PortAudioDevice` instance or by name. You can also give separate names or devices if you want different input and output devices
@@ -27,13 +27,16 @@ You can get a list of your system's devices with the `PortAudio.devices()` funct
 
 ```julia
 julia> PortAudio.devices()
-6-element Array{PortAudio.PortAudioDevice,1}:
- PortAudio.PortAudioDevice("AirPlay","Core Audio",0,2,0)
- PortAudio.PortAudioDevice("Built-in Microph","Core Audio",2,0,1)
- PortAudio.PortAudioDevice("Built-in Output","Core Audio",0,2,2)
- PortAudio.PortAudioDevice("JackRouter","Core Audio",2,2,3)
- PortAudio.PortAudioDevice("After Effects 13.5","Core Audio",0,0,4)
- PortAudio.PortAudioDevice("Built-In Aggregate","Core Audio",2,2,5)
+14-element Vector{PortAudio.PortAudioDevice}:
+ "sof-hda-dsp: - (hw:0,0)" 2→2
+ "sof-hda-dsp: - (hw:0,3)" 0→2
+ "sof-hda-dsp: - (hw:0,4)" 0→2
+ "sof-hda-dsp: - (hw:0,5)" 0→2
+ ⋮
+ "upmix" 8→8
+ "vdownmix" 6→6
+ "dmix" 0→2
+ "default" 32→32
 ```
 
 ## Reading and Writing
@@ -75,7 +78,7 @@ end
 
 ### Open your built-in microphone and speaker by name
 ```julia
-PortAudioStream("Built-in Microph", "Built-in Output") do stream
+PortAudioStream("default", "default") do stream
     write(stream, stream)
 end
 ```
@@ -92,10 +95,9 @@ julia> using SampledSignals: s
 julia> using FileIO: save
 
 julia> stream = PortAudioStream(1, 0) # default input (e.g., built-in microphone)
-PortAudio.PortAudioStream{Float32,SIUnits.SIQuantity{Int64,0,0,-1,0,0,0,0,0,0}}
-  Samplerate: 48000 s⁻¹
-  Buffer Size: 4096 frames
-  2 channel source: "Built-in Microph"
+PortAudioStream{Float32}
+  Samplerate: 44100.0Hz
+  2 channel source: "default"
 
 julia> buf = read(stream, 10s)
 480000-frame, 2-channel SampleBuf{Float32, 2, SIUnits.SIQuantity{Int64,0,0,-1,0,0,0,0,0,0}}
@@ -114,7 +116,7 @@ julia> save(joinpath(homedir(), "Desktop", "myvoice.ogg"), buf)
 using PortAudio, SampledSignals
 S = 8192 # sampling rate (samples / second)
 x = cos.(2pi*(1:2S)*440/S) # A440 tone for 2 seconds
-PortAudioStream(0, 2; samplerate=Float64(S)) do stream
+PortAudioStream(0, 2; samplerate=S) do stream
     write(stream, x)
 end
 ```

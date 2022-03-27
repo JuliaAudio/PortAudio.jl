@@ -730,20 +730,24 @@ function PortAudioStream(
                     output_device.output_bounds.high_latency,
                 )
             end
-            if samplerate === nothing
-                samplerate = combine_default_sample_rates(
+            samplerate = if samplerate === nothing
+                combine_default_sample_rates(
                     input_device,
                     input_device.default_sample_rate,
                     output_device,
                     output_device.default_sample_rate,
                 )
+            else
+                float(samplerate)
             end
         else
             if latency === nothing
                 latency = input_device.input_bounds.high_latency
             end
-            if samplerate === nothing
-                samplerate = input_device.default_sample_rate
+            samplerate = if samplerate === nothing
+                input_device.default_sample_rate
+            else
+                float(samplerate)
             end
         end
     else
@@ -751,8 +755,10 @@ function PortAudioStream(
             if latency === nothing
                 latency = output_device.output_bounds.high_latency
             end
-            if samplerate === nothing
-                samplerate = output_device.default_sample_rate
+            samplerate = if samplerate === nothing
+                output_device.default_sample_rate
+            else
+                float(samplerate)
             end
         else
             throw(ArgumentError("Input or output must have at least 1 channel"))
