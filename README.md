@@ -10,7 +10,11 @@ PortAudio.jl is a wrapper for [libportaudio](http://www.portaudio.com/), which g
 
 ## Opening a stream
 
-The easiest way to open a source or sink is with the default `PortAudioStream()` constructor, which will open a 2-in, 2-out stream to your system's default device(s). The constructor can also take the input and output channel counts as positional arguments, or a variety of other keyword arguments. If you don't specify latency and sample rate, PortAudio will use device defaults.
+The easiest way to open a source or sink is with the default `PortAudioStream()` constructor, 
+which will open a 2-in, 2-out stream to your system's default device(s).
+The constructor can also take the input and output channel counts as positional arguments,
+or a variety of other keyword arguments.
+If named keyword arguments `latency` or `samplerate` are unspecified, then PortAudio will use device defaults.
 
 ```julia
 PortAudioStream(inchans=2, outchans=2; eltype=Float32, latency = nothing, samplerate = nothing)
