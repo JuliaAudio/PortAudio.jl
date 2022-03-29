@@ -17,7 +17,7 @@ or a variety of other keyword arguments.
 If named keyword arguments `latency` or `samplerate` are unspecified, then PortAudio will use device defaults.
 
 ```julia
-PortAudioStream(inchans=2, outchans=2; eltype=Float32, latency = nothing, samplerate = nothing)
+PortAudioStream(inchans=2, outchans=2; eltype=Float32, samplerate=48000, latency=0.1)
 ```
 
 You can open a specific device by adding it as the first argument, either as a `PortAudioDevice` instance or by name. You can also give separate names or devices if you want different input and output devices
