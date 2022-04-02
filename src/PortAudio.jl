@@ -424,8 +424,18 @@ function read_buffer!(buffer, use_frames = buffer.frames_per_buffer)
     read_or_write(Pa_ReadStream, buffer, use_frames)
 end
 
-# the messenger will send tasks to the scribe
-# the scribe will read/write from the buffer
+"""
+    Messenger{Sample, Scribe, Input, Output}
+
+A `struct` with entries
+* `device_name::String`
+* `buffer::Buffer{Sample}`
+* `scribe::Scribe`
+* `input_channel::Channel{Input}`
+* `output_channel::Channel{Output}`
+The messenger will send tasks to the scribe;
+the scribe will read/write from the buffer.
+"""
 struct Messenger{Sample, Scribe, Input, Output}
     device_name::String
     buffer::Buffer{Sample}
@@ -497,7 +507,7 @@ function messenger_task(
     messenger, task
 end
 
-function fetch_messanger(messenger, task)
+function fetch_messenger(messenger, task)
     if has_channels(messenger)
         # this will shut down the channels, which will shut down the thread
         close(messenger.input_channel)
@@ -517,9 +527,9 @@ struct PortAudioStream{SinkMessenger, SourceMessenger}
     sample_rate::Float64
     # pointer to the c object
     pointer_to::Ptr{PaStream}
-    sink_messanger::SinkMessenger
+    sink_messenger::SinkMessenger
     sink_task::Task
-    source_messanger::SourceMessenger
+    source_messenger::SourceMessenger
     source_task::Task
 end
 
@@ -874,8 +884,8 @@ function close(stream::PortAudioStream)
     # closing is tricky, because we want to make sure we've read exactly as much as we've written
     # but we have don't know exactly what the tasks are doing
     # for now, just close one and then the other
-    fetch_messanger(stream.source_messanger, stream.source_task)
-    fetch_messanger(stream.sink_messanger, stream.sink_task)
+    fetch_messenger(stream.source_messenger, stream.source_task)
+    fetch_messenger(stream.sink_messenger, stream.sink_task)
     pointer_to = stream.pointer_to
     # only stop if it's not already stopped
     if !Bool(handle_status(Pa_IsStreamStopped(pointer_to)))
@@ -903,7 +913,7 @@ function eltype(
     Sample
 end
 
-# these defaults will error for non-sampledsignal scribes
+# these defaults will error for non-SampledSignals scribes
 # which is probably ok; we want these users to define new methods
 read(stream::PortAudioStream, arguments...) = read(stream.source, arguments...)
 read!(stream::PortAudioStream, arguments...) = read!(stream.source, arguments...)
@@ -963,10 +973,10 @@ function getproperty(
 end
 
 function nchannels(source_or_sink::PortAudioSource)
-    nchannels(source_or_sink.stream.source_messanger)
+    nchannels(source_or_sink.stream.source_messenger)
 end
 function nchannels(source_or_sink::PortAudioSink)
-    nchannels(source_or_sink.stream.sink_messanger)
+    nchannels(source_or_sink.stream.sink_messenger)
 end
 function samplerate(source_or_sink::Union{PortAudioSink, PortAudioSource})
     samplerate(source_or_sink.stream)
@@ -984,8 +994,8 @@ end
 function isopen(source_or_sink::Union{PortAudioSink, PortAudioSource})
     isopen(source_or_sink.stream)
 end
-name(source_or_sink::PortAudioSink) = name(source_or_sink.stream.sink_messanger)
-name(source_or_sink::PortAudioSource) = name(source_or_sink.stream.source_messanger)
+name(source_or_sink::PortAudioSink) = name(source_or_sink.stream.sink_messenger)
+name(source_or_sink::PortAudioSource) = name(source_or_sink.stream.source_messenger)
 
 # could show full type name, but the PortAudio part is probably redundant
 # because these will usually only get printed as part of show for PortAudioStream
@@ -1014,14 +1024,14 @@ end
 as_matrix(matrix::Matrix) = matrix
 as_matrix(vector::Vector) = reshape(vector, length(vector), 1)
 
-# these will only work with sampledsignals scribes
+# these will only work with SampledSignals scribes
 function unsafe_write(
     sink::PortAudioSink{<:Messenger{<:Any, <:SampledSignalsWriter}},
     julia_buffer::Array,
     already,
     frame_count,
 )
-    exchange(sink.stream.sink_messanger, as_matrix(julia_buffer), already, frame_count)
+    exchange(sink.stream.sink_messenger, as_matrix(julia_buffer), already, frame_count)
 end
 
 function unsafe_read!(
@@ -1030,7 +1040,7 @@ function unsafe_read!(
     already,
     frame_count,
 )
-    exchange(source.stream.source_messanger, as_matrix(julia_buffer), already, frame_count)
+    exchange(source.stream.source_messenger, as_matrix(julia_buffer), already, frame_count)
 end
 
 end # module PortAudio
