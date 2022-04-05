@@ -1,4 +1,4 @@
-using Makie, GeometryTypes
+using Makie, GeometryTypes, FFTW
 using PortAudio
 
 N = 1024 # size of audio read
@@ -7,9 +7,9 @@ D = 200 # number of bins to display
 M = 100 # number of lines to draw
 S = 0.5 # motion speed of lines
 src = PortAudioStream(1, 2)
-buf = Array{Float32}(N)
-fftbuf = Array{Complex{Float32}}(N2)
-magbuf = Array{Float32}(N2)
+buf = Array{Float32}(undef, N)
+fftbuf = Array{Complex{Float32}}(undef, N2)
+magbuf = Array{Float32}(undef, N2)
 fftplan = plan_rfft(buf; flags = FFTW.EXHAUSTIVE)
 
 scene = Scene(resolution = (500, 500))

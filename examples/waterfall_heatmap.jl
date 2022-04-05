@@ -1,4 +1,5 @@
 using Makie
+using FFTW
 using PortAudio
 using DSP
 
@@ -18,7 +19,7 @@ takes a block of audio, FFT it, and write it to the beginning of the buffer
 """
 function processbuf!(readbuf, win, dispbuf, fftbuf, fftplan)
     readbuf .*= win
-    A_mul_B!(fftbuf, fftplan, readbuf)
+    fftbuf = fftplan * readbuf
     shift1!(dispbuf)
     @. dispbuf[end:-1:1, 1] = log(clamp(abs(fftbuf[1:D]), 0.0001, Inf))
 end
@@ -35,9 +36,9 @@ N2 = N ÷ 2 + 1 # size of rfft output
 D = 200 # number of bins to display
 M = 200 # amount of history to keep
 src = PortAudioStream(1, 2)
-buf = Array{Float32}(N) # buffer for reading
+buf = Array{Float32}(undef, N) # buffer for reading
 fftplan = plan_rfft(buf; flags = FFTW.EXHAUSTIVE)
-fftbuf = Array{Complex{Float32}}(N2) # destination buf for FFT
+fftbuf = Array{Complex{Float32}}(undef, N2) # destination buf for FFT
 dispbufs = [zeros(Float32, D, M) for i in 1:5, j in 1:5] # STFT bufs
 win = gaussian(N, 0.125)
 

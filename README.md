@@ -17,7 +17,7 @@ or a variety of other keyword arguments.
 If named keyword arguments `latency` or `samplerate` are unspecified, then PortAudio will use device defaults.
 
 ```julia
-PortAudioStream(inchans=2, outchans=2; eltype=Float32, samplerate=48000, latency=0.1)
+PortAudioStream(; eltype=Float32, samplerate=48000, latency=0.1)
 ```
 
 You can open a specific device by adding it as the first argument, either as a `PortAudioDevice` instance or by name. You can also give separate names or devices if you want different input and output devices
@@ -45,7 +45,7 @@ julia> PortAudio.devices()
 
 ## Reading and Writing
 
-The `PortAudioStream` type has `source` and `sink` fields which are of type `PortAudioSource <: SampleSource` and `PortAudioSink <: SampleSink`, respectively. are subtypes of `SampleSource` and `SampleSink`, respectively (from [SampledSignals.jl](https://github.com/JuliaAudio/SampledSignals.jl)). This means they support all the stream and buffer features defined there. For example, if you load SampledSignals with `using SampledSignals` you can read 5 seconds to a buffer with `buf = read(stream.source, 5s)`, regardless of the sample rate of the device.
+The `PortAudioStream` type has `source` and `sink` fields which are of type `PortAudioSource <: SampleSource` and `PortAudioSink <: SampleSink`, respectively. They are subtypes of `SampleSource` and `SampleSink`, respectively (from [SampledSignals.jl](https://github.com/JuliaAudio/SampledSignals.jl)). This means they support all the stream and buffer features defined there. For example, if you load SampledSignals with `using SampledSignals` you can read 5 seconds to a buffer with `buf = read(stream.source, 5s)`, regardless of the sample rate of the device.
 
 PortAudio.jl also provides convenience wrappers around the `PortAudioStream` type so you can read and write to it directly, e.g. `write(stream, stream)` will set up a loopback that will read from the input and play it back on the output.
 

@@ -7,7 +7,7 @@ const DEFAULTDEVICE = -1
 function paudio()
     devs = PortAudio.devices()
     if DEFAULTDEVICE < 0
-        devnum = findfirst(x -> x.maxoutchans > 0, devs)
+        devnum = findfirst(x -> x.output_bounds.max_channels > 0, devs)
         (devnum == nothing) && error("No output device for audio found")
     else
         devnum = DEFAULTDEVICE + 1
