@@ -230,19 +230,25 @@ function devices()
 end
 
 # we can handle reading and writing from buffers in a similar way
-function read_or_write(a_function, buffer, use_frames = buffer.frames_per_buffer)
+function read_or_write(a_function, buffer, use_frames = buffer.frames_per_buffer; acquire_lock = true)
+    pointer_to = buffer.pointer_to
+    data = buffer.data
     handle_status(
-        # because we're calling Pa_ReadStream and Pa_WriteStream from separate threads,
-        # we put a lock around these calls
-        lock(
-            let a_function = a_function,
-                pointer_to = buffer.pointer_to,
-                data = buffer.data,
-                use_frames = use_frames
-                () -> a_function(pointer_to, data, use_frames)
-            end,
-            buffer.stream_lock,
-        ),
+        if acquire_lock 
+            # because we're calling Pa_ReadStream and Pa_WriteStream from separate threads,
+            # we put a lock around these calls
+            lock(
+                let a_function = a_function,
+                    pointer_to = pointer_to,
+                    data = data,
+                    use_frames = use_frames
+                    () -> a_function(pointer_to, data, use_frames)
+                end,
+                buffer.stream_lock,
+            )
+        else
+            a_function(pointer_to, data, use_frames)
+        end;
         warn_xruns = buffer.warn_xruns,
     )
 end
@@ -407,21 +413,25 @@ eltype(::Type{Buffer{Sample}}) where {Sample} = Sample
 nchannels(buffer::Buffer) = buffer.number_of_channels
 
 """
-    PortAudio.write_buffer(buffer, use_frames = buffer.frames_per_buffer)
+    PortAudio.write_buffer(buffer, use_frames = buffer.frames_per_buffer; acquire_lock = true)
 
 Write a number of frames (`use_frames`) from a [`PortAudio.Buffer`](@ref) to PortAudio.
+
+Set `acquire_lock = false` to skip acquiring the lock.
 """
-function write_buffer(buffer::Buffer, use_frames = buffer.frames_per_buffer)
-    read_or_write(Pa_WriteStream, buffer, use_frames)
+function write_buffer(buffer::Buffer, use_frames = buffer.frames_per_buffer; acquire_lock = true)
+    read_or_write(Pa_WriteStream, buffer, use_frames; acquire_lock = acquire_lock)
 end
 
 """
-    PortAudio.read_buffer!(buffer::Buffer, use_frames = buffer.frames_per_buffer)
+    PortAudio.read_buffer!(buffer::Buffer, use_frames = buffer.frames_per_buffer; acquire_lock = true)
 
 Read a number of frames (`use_frames`) from PortAudio to a [`PortAudio.Buffer`](@ref).
+
+Set `acquire_lock = false` to skip acquiring the acquire_lock.
 """
-function read_buffer!(buffer, use_frames = buffer.frames_per_buffer)
-    read_or_write(Pa_ReadStream, buffer, use_frames)
+function read_buffer!(buffer, use_frames = buffer.frames_per_buffer; acquire_lock = true)
+    read_or_write(Pa_ReadStream, buffer, use_frames; acquire_lock = acquire_lock)
 end
 
 """
@@ -594,10 +604,9 @@ function combine_default_sample_rates(
 )
     if input_sample_rate != output_sample_rate
         throw(
-            ArgumentError(
-                """
-Default sample rate $input_sample_rate for input $(name(input_device)) disagrees with
-default sample rate $output_sample_rate for output $(name(output_device)).
+            ArgumentError("""
+Default sample rate $input_sample_rate for input \"$(name(input_device))\" disagrees with
+default sample rate $output_sample_rate for output \"$(name(output_device))\".
 Please specify a sample rate.
 """,
             ),
@@ -907,6 +916,7 @@ end
 isopen(stream::PortAudioStream) = isopen(stream.pointer_to)
 
 samplerate(stream::PortAudioStream) = stream.sample_rate
+
 function eltype(
     ::Type{<:PortAudioStream{<:Messenger{Sample}, <:Messenger{Sample}}},
 ) where {Sample}
@@ -927,7 +937,7 @@ function show(io::IO, stream::PortAudioStream)
     print(io, "PortAudioStream{")
     print(io, eltype(stream))
     println(io, "}")
-    print(io, "  Samplerate: ", samplerate(stream), "Hz")
+    print(io, "  Samplerate: ", round(Int, samplerate(stream)), "Hz")
     # show source or sink if there's any channels
     sink = stream.sink
     if has_channels(sink)
@@ -1042,5 +1052,7 @@ function unsafe_read!(
 )
     exchange(source.stream.source_messenger, as_matrix(julia_buffer), already, frame_count)
 end
+
+include("precompile.jl")
 
 end # module PortAudio
