@@ -134,11 +134,11 @@ if !isempty(devices())
             source = stream.source
             @test sprint(show, stream) == """
                 PortAudioStream{Float32}
-                  Samplerate: 44100.0Hz
-                  2 channel sink: $(repr(input_name))
-                  2 channel source: $(repr(output_name))"""
-            @test sprint(show, source) == "2 channel source: $(repr(output_name))"
-            @test sprint(show, sink) == "2 channel sink: $(repr(input_name))"
+                  Samplerate: 44100Hz
+                  2 channel sink: $(repr(output_name))
+                  2 channel source: $(repr(input_name))"""
+            @test sprint(show, source) == "2 channel source: $(repr(input_name))"
+            @test sprint(show, sink) == "2 channel sink: $(repr(output_name))"
             write(stream, stream, 5s)
             @test PaErrorCode(handle_status(Pa_StopStream(stream.pointer_to))) == paNoError
             @test isopen(stream)
@@ -209,8 +209,8 @@ if !isempty(devices())
             big = typemax(Int)
             @test_throws DomainError(
                 typemax(Int),
-                "$big exceeds maximum input channels for $output_name",
-            ) PortAudioStream(input_name, output_name, big, 0)
+                "$big exceeds maximum output channels for $output_name",
+            ) PortAudioStream(input_name, output_name, 0, big)
             @test_throws ArgumentError("Input or output must have at least 1 channel") PortAudioStream(
                 input_name,
                 output_name,
@@ -219,8 +219,8 @@ if !isempty(devices())
                 adjust_channels = true,
             )
             @test_throws ArgumentError("""
-            Default sample rate 0 for input $output_name disagrees with
-            default sample rate 1 for output $input_name.
+            Default sample rate 0 for input \"$input_name\" disagrees with
+            default sample rate 1 for output \"$output_name\".
             Please specify a sample rate.
             """) combine_default_sample_rates(
                 get_device(input_name),

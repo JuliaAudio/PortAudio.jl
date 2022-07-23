@@ -133,7 +133,7 @@ function __init__()
         config_folder = "ALSA_CONFIG_DIR"
         if config_folder ∉ keys(ENV)
             ENV[config_folder] =
-                seek_alsa_conf(["/usr/share/alsa", "/usr/local/share/alsa", "/etc/alsa"])
+                seek_alsa_conf(("/usr/share/alsa", "/usr/local/share/alsa", "/etc/alsa"))
         end
         # the plugin folder will contain plugins for, critically, PulseAudio
         plugin_folder = "ALSA_PLUGIN_DIR"
@@ -604,10 +604,9 @@ function combine_default_sample_rates(
 )
     if input_sample_rate != output_sample_rate
         throw(
-            ArgumentError(
-                """
-Default sample rate $input_sample_rate for input $(name(input_device)) disagrees with
-default sample rate $output_sample_rate for output $(name(output_device)).
+            ArgumentError("""
+Default sample rate $input_sample_rate for input \"$(name(input_device))\" disagrees with
+default sample rate $output_sample_rate for output \"$(name(output_device))\".
 Please specify a sample rate.
 """,
             ),
