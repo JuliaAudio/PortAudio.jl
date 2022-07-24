@@ -11,6 +11,7 @@ using PortAudio:
     get_output_type,
     handle_status,
     initialize,
+    name,
     PortAudioException,
     PortAudio,
     PortAudioDevice,
@@ -18,7 +19,7 @@ using PortAudio:
     safe_load,
     seek_alsa_conf,
     terminate,
-    name
+    write_buffer
 using PortAudio.LibPortAudio:
     Pa_AbortStream,
     PaError,
@@ -109,7 +110,9 @@ using Test: @test, @test_logs, @test_nowarn, @testset, @test_throws
     initialize()
 end
 
-if !isempty(devices())
+if isempty(devices())
+    @test_throws ArgumentError("No input device available") get_default_input_index()
+else
     @testset "Tests with sound" begin
         # these default values are specific to local machines
         input_name = get_device(get_default_input_index()).name
@@ -130,6 +133,7 @@ if !isempty(devices())
             sleep(1)
             println("Testing pass-through")
             stream = PortAudioStream(input_name, output_name, 2, 2; adjust_channels = true)
+            write_buffer(stream.sink_messenger.buffer, acquire_lock = false)
             sink = stream.sink
             source = stream.source
             @test sprint(show, stream) == """

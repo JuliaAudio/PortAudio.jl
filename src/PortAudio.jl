@@ -48,6 +48,7 @@ using .LibPortAudio:
     Pa_Initialize,
     paInputOverflowed,
     Pa_IsStreamStopped,
+    paNoDevice,
     paNoFlag,
     Pa_OpenStream,
     paOutputUnderflowed,
@@ -195,12 +196,22 @@ function show(io::IO, device::PortAudioDevice)
     print(io, device.output_bounds.max_channels)
 end
 
+function check_device_exists(device_index, device_type)
+    if device_index == paNoDevice
+        throw(ArgumentError("No $device_type device available"))
+    end
+end
+
 function get_default_input_index()
-    handle_status(Pa_GetDefaultInputDevice())
+    device_index = Pa_GetDefaultInputDevice()
+    check_device_exists(device_index, "input")
+    device_index
 end
 
 function get_default_output_index()
-    handle_status(Pa_GetDefaultOutputDevice())
+    device_index = Pa_GetDefaultOutputDevice()
+    check_device_exists(device_index, "output")
+    device_index
 end
 
 # we can look up devices by index or name
