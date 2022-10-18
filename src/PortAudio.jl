@@ -626,6 +626,21 @@ Please specify a sample rate.
     input_sample_rate
 end
 
+function fill_one_device(device, bounds, latency, samplerate)
+    return (
+        if latency === nothing
+            bounds.high_latency
+        else
+            latency
+        end,
+        if samplerate === nothing
+            device.default_sample_rate
+        else
+            float(samplerate)
+        end
+    )
+end
+
 # this is the top-level outer constructor that all the other outer constructors end up calling
 """
     PortAudioStream(input_channels = 2, output_channels = 2; options...)
@@ -771,25 +786,13 @@ function PortAudioStream(
                 float(samplerate)
             end
         else
-            if latency === nothing
-                latency = input_device.input_bounds.high_latency
-            end
-            samplerate = if samplerate === nothing
-                input_device.default_sample_rate
-            else
-                float(samplerate)
-            end
+            latency, samplerate = 
+                fill_one_device(input_device, input_device.input_bounds, latency, samplerate)
         end
     else
         if output_channels_filled > 0
-            if latency === nothing
-                latency = output_device.output_bounds.high_latency
-            end
-            samplerate = if samplerate === nothing
-                    output_device.default_sample_rate
-                else
-                    float(samplerate)
-                end
+            latency, samplerate = 
+                fill_one_device(output_device, output_device.output_bounds, latency, samplerate)
         else
             throw(ArgumentError("Input or output must have at least 1 channel"))
         end
