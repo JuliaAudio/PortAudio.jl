@@ -465,7 +465,7 @@ struct Messenger{Sample, Scribe, Input, Output}
     output_channel::Channel{Output}
 end
 
-eltype(::Type{Messenger{Sample}}) where {Sample} = Sample
+eltype(::Type{<: Messenger{Sample}}) where {Sample} = Sample
 name(messenger::Messenger) = messenger.device_name
 nchannels(messenger::Messenger) = nchannels(messenger.buffer)
 
@@ -535,9 +535,8 @@ function fetch_messenger(messenger, task)
         # wait for tasks to finish to make sure any errors get caught
         wait(task)
         # output channel will close because it is bound to the task
-    else
-        ""
     end
+    nothing
 end
 
 #
