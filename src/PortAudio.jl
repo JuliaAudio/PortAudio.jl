@@ -1,6 +1,14 @@
 module PortAudio
 
-using alsa_plugins_jll: alsa_plugins_jll
+if Sys.islinux()
+    using alsa_plugins_jll
+    # the plugin folder will contain plugins for, critically, PulseAudio
+    plugin_folder = "ALSA_PLUGIN_DIR"
+    if plugin_folder ∉ keys(ENV) && alsa_plugins_jll.is_available()
+        ENV[plugin_folder] = joinpath(alsa_plugins_jll.artifact_dir, "lib", "alsa-lib")
+    end
+end
+
 import Base:
     close,
     eltype,
@@ -136,11 +144,6 @@ function __init__()
             ENV[config_folder] =
                 seek_alsa_conf(("/usr/share/alsa", "/usr/local/share/alsa", "/etc/alsa"))
         end
-        # the plugin folder will contain plugins for, critically, PulseAudio
-        plugin_folder = "ALSA_PLUGIN_DIR"
-        if plugin_folder ∉ keys(ENV) && alsa_plugins_jll.is_available()
-            ENV[plugin_folder] = joinpath(alsa_plugins_jll.artifact_dir, "lib", "alsa-lib")
-        end
     end
     initialize()
     atexit(() -> terminate())
@@ -245,7 +248,7 @@ function read_or_write(a_function, buffer, use_frames = buffer.frames_per_buffer
     pointer_to = buffer.pointer_to
     data = buffer.data
     handle_status(
-        if acquire_lock 
+        if acquire_lock
             # because we're calling Pa_ReadStream and Pa_WriteStream from separate threads,
             # we put a lock around these calls
             lock(
@@ -736,7 +739,7 @@ function PortAudioStream(
     stream_lock = ReentrantLock(),
     user_data = C_NULL,
     warn_xruns = true,
-    writer = SampledSignalsWriter(),   
+    writer = SampledSignalsWriter(),
 )
     input_channels_filled = fill_max_channels(
         "input",
