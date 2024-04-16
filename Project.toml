@@ -14,6 +14,7 @@ Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 julia = "1.6"
 alsa_plugins_jll = "1.2.2"
 libportaudio_jll = "19.6.0"
+LinearAlgebra = "1"
 SampledSignals = "2.1.1"
 Suppressor = "0.2"
 

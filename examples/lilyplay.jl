@@ -8,7 +8,7 @@ function paudio()
     devs = PortAudio.devices()
     if DEFAULTDEVICE < 0
         devnum = findfirst(x -> x.maxoutchans > 0, devs)
-        (devnum == nothing) && error("No output device for audio found")
+        (devnum === nothing) && error("No output device for audio found")
     else
         devnum = DEFAULTDEVICE + 1
     end
@@ -43,19 +43,19 @@ end
 
 function parsevoice(melody::String; tempo = 132, beatunit = 4, lyrics = nothing)
     ostream = paudio() # initialize audio for output
-    lyrics_syllables = lyrics == nothing ? nothing : split(lyrics)
-    lyrics_syllables != nothing && (lyrics_syllables[end] *= "\n")
+    lyrics_syllables = lyrics === nothing ? nothing : split(lyrics)
+    lyrics_syllables !== nothing && (lyrics_syllables[end] *= "\n")
     note_idx = 1
     oldduration = 4
     for line in split(melody, '\n')
         percent_idx = findfirst('%', line) # Trim comment
-        percent_idx == nothing || (line = line[1:(percent_idx - 1)])
+        percent_idx === nothing || (line = line[1:(percent_idx - 1)])
         for token in split(line)
             pitch, duration, dotted, sustained = parsetoken(token)
-            duration == nothing && (duration = oldduration)
+            duration === nothing && (duration = oldduration)
             oldduration = duration
             dotted && (duration *= 1.5)
-            if lyrics_syllables != nothing && 1 <= note_idx <= length(lyrics_syllables)
+            if lyrics_syllables !== nothing && 1 <= note_idx <= length(lyrics_syllables)
                 # Print the lyrics, omitting hyphens
                 if lyrics_syllables[note_idx][end] == '-'
                     print(join(split(lyrics_syllables[note_idx][:], "")[1:(end - 1)]), "")

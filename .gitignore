@@ -10,3 +10,7 @@ coverage
 deps/usr/lib/pa_shim.so
 deps/usr/lib/pa_shim.dylib
 deps/usr/lib/pa_shim.dll
+.DS_Store
+LocalPreferences.toml
+Manifest.toml
+settings.json
